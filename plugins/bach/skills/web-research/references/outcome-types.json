@@ -1,0 +1,75 @@
+{
+  "solutions": {
+    "answers": "How do people solve X?",
+    "columns": {
+      "solution": "name of the solution, product, or technique",
+      "approach": "how it works in one line",
+      "tools": "named tools/products/libraries involved",
+      "pros": "stated advantages",
+      "cons": "stated drawbacks or limits",
+      "maturity": "experimental | emerging | established | legacy, as the page implies",
+      "evidence": "the claim or number backing it, verbatim and short"
+    },
+    "hint": "One row per distinct solution the page describes or recommends."
+  },
+  "landscape": {
+    "answers": "Who and what is in space X?",
+    "columns": {
+      "entity": "company, product, project, standard, or org",
+      "category": "what kind of thing it is",
+      "segment": "market/user segment it targets",
+      "positioning": "how it is positioned or differentiated",
+      "key_facts": "funding, size, launch date, adoption, as stated"
+    },
+    "hint": "One row per named entity that plays a role in the space."
+  },
+  "comparison": {
+    "answers": "A vs B vs C?",
+    "columns": {
+      "option": "the thing being compared",
+      "criterion": "the dimension compared on",
+      "value": "the stated value/judgement for this option on this criterion"
+    },
+    "hint": "One row per option x criterion cell the page actually states. Never infer missing cells."
+  },
+  "situation": {
+    "answers": "What is happening with X?",
+    "columns": {
+      "event": "what happened",
+      "date": "when, as stated (YYYY-MM-DD if possible)",
+      "cause": "stated cause",
+      "impact": "stated impact, with numbers if any",
+      "status": "ongoing | resolved | announced | rumoured"
+    },
+    "hint": "One row per event or development."
+  },
+  "root_cause": {
+    "answers": "Why does X fail?",
+    "columns": {
+      "symptom": "observable problem",
+      "cause": "stated root cause",
+      "evidence": "how the page shows it (log, repro, benchmark)",
+      "fix": "stated fix or workaround"
+    },
+    "hint": "One row per symptom-cause pair."
+  },
+  "how_to": {
+    "answers": "What are the steps to do X?",
+    "columns": {
+      "step": "action, in order",
+      "prereq": "what must exist first",
+      "command_or_config": "exact command/config, verbatim",
+      "gotcha": "warning or common mistake"
+    },
+    "hint": "One row per step, in the page's order."
+  },
+  "best_practices": {
+    "answers": "What is recommended for X?",
+    "columns": {
+      "practice": "the recommendation",
+      "rationale": "why",
+      "anti_pattern": "what to avoid instead"
+    },
+    "hint": "One row per recommendation."
+  }
+}

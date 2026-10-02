@@ -1,0 +1,14 @@
+{
+  "name": "bach-workflow",
+  "owner": {
+    "name": "Bach Ly"
+  },
+  "plugins": [
+    {
+      "name": "bach",
+      "source": "./plugins/bach",
+      "description": "Bach's personal skills and agents"
+    }
+  ],
+  "description": "Bach personal Claude Code skills and agents"
+}
