@@ -19,7 +19,7 @@ claude
 |---|---|
 | 1. deps | Checks required binaries, exits if any missing |
 | 2. claude-hud | Installs `claude-hud@claude-hud`, copies `setup/claude-hud.json` to `~/.claude/plugins/claude-hud/config.json` (keeps existing), links `~/.claude/hud-statusline.sh` |
-| 3. settings | Backs up `~/.claude/settings.json`, sets only `statusLine` and `teammateMode: "tmux"` |
+| 3. settings | Backs up `~/.claude/settings.json`, sets only `statusLine`, `teammateMode: "tmux"` and `env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1"` |
 | 4. tmux | Links `~/.tmux.conf`, or appends `source-file` to an existing one |
 | 5. bach plugin | Adds this repo as marketplace `bach-workflow`, installs `bach@bach-workflow` |
 
@@ -46,6 +46,7 @@ bootstrap.sh
 |---|---|
 | Run a skill | `/bach:<skill>` e.g. `/bach:web-research <topic>`, or let Claude pick it by description |
 | Agent teammates | Start Claude inside tmux; each teammate opens in its own pane |
+| Ship a feature as parallel small PRs | `/bach:pr-team <feature>`: the lead plans a task graph, spawns `pr-builder`s (one folder each), a `pr-reviewer` and a `pr-watcher` pane that routes review comments back. You review and merge |
 | Update | `git -C ~/bach-workflow pull` then `claude plugin marketplace update bach-workflow` |
 | Add a skill | Create `plugins/bach/skills/<name>/SKILL.md`, bump `version` in `plugin.json`, commit, push |
 | Change HUD display | Run `/claude-hud:configure`, or edit `~/.claude/plugins/claude-hud/config.json` |
