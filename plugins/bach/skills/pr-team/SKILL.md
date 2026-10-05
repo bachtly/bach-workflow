@@ -91,7 +91,8 @@ Teammates send you an `idle_notification` after each turn and stay addressable; 
 | Builder needs a file outside its folder | Make a new task for that folder (or a contract task), add `blockedBy`, tell the builder to finish without it or wait |
 | Task completed with a PR URL | Check the rubric quickly; tell the user "PR #n ready for review: <title>" |
 | Builder reports a new PR (on-demand mode) | Step 4: classify, then tell the human or spawn `reviewer-pr<N>` |
-| Reviewer verdict `ok` / `blocked` (on-demand mode) | Record in plan.md, shut the reviewer down. `ok`: tell the human "PR #N pre-review ok, ready to merge". `blocked`: the reviewer already talks to the builder; tell the human only if it needs a decision |
+| Reviewer verdict `ok` (on-demand mode) | Record in plan.md, shut the reviewer down. Tell the human "PR #N pre-review ok, ready to merge" |
+| Reviewer says `blocked` (on-demand mode) | Keep the reviewer (no `shutdown_request`). Route the fix to the owning builder and give it the reviewer's name; wait for the re-check. Tell the human only if it needs a decision (Step 4) |
 | Watcher: human-comment fix round started / ended | Record in plan.md. Don't route fixes yourself |
 | Watcher: PR merged | Dependent tasks unblock automatically. If builders are idle and ready tasks exist, keep them claiming |
 | Open PRs ≥ review budget (watcher recounts via `gh`) | Tell builders to pause after their current task. Resume when PRs merge |
@@ -119,6 +120,9 @@ Everything else is **small**.
 
 - Several big PRs → several reviewers in parallel, at most `max_reviewers` alive. Over the cap, queue the PR in plan.md and spawn when a reviewer finishes.
 - A reviewer that sends its one-line verdict is done: send it a `shutdown_request`. Update `size` and `reviewer` in plan.md.
+- **Exception, `blocked`: keep the reviewer.** Don't shut it down and don't spawn a new reviewer for the same PR. Tell the owning builder: "reviewer `reviewer-pr<N>` is waiting on PR #N; fix, push, then send it `fix pushed <sha>`". The builder and reviewer talk directly; the reviewer re-checks only `git diff <old>..<new>` and sends a new verdict.
+  - Owning builder gone (shut down or busy elsewhere): spawn or assign a builder for the fix, but keep the same reviewer, and give the new builder the reviewer's name. Tell the reviewer the new builder's name.
+  - Shut a reviewer down only on: `ok`, the PR merged or closed, or the builder or human saying no fix is coming.
 - If a big PR merges mid-review, the reviewer stops on its own (it re-checks state); you just record it.
 - Merge gate for big PRs is the label `pre-review:ok`. Say so to the human for every big PR.
 
