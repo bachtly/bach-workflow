@@ -61,7 +61,7 @@ Teammate permission prompts appear in **your** session. Suggest the user allow `
 
 ## Step 2 · Spawn
 
-1. Create one shared task per planned task (`TaskCreate`), then set `blockedBy` (`TaskUpdate addBlockedBy`). Put folder, files, acceptance criteria and flag in each description.
+1. Create one shared task per planned task (`TaskCreate`), then set `blockedBy` (`TaskUpdate addBlockedBy`). Description first line is `folder: <path>` (builders filter claims on it), then files, acceptance criteria and flag.
 2. Spawn teammates with predictable names: `builder-1..N` and `pr-watcher`. Use the plugin agent types `bach:pr-builder` and `bach:pr-watcher`. Run preflight check (c) right after the first spawn.
    - If the runtime refuses a plugin agent type as a teammate, spawn a general teammate and paste the body of `AGENTS/<role>.md` at the top of its prompt.
    - Every prompt names **your** address for SendMessage: read it from the `members` entry with agent type `team-lead` in `~/.claude/teams/*/config.json`.
@@ -105,16 +105,17 @@ Teammates send you an `idle_notification` after each turn and stay addressable; 
 | Watcher: human-comment fix round started / ended | Record in plan.md. Don't route fixes yourself; the watcher is the single router for human comments |
 | Watcher: PR merged | Dependent tasks unblock automatically. If a `reviewer-pr<N>` is still alive, it stops on its own; shut it down. If builders are idle and ready tasks exist, keep them claiming |
 | Open PRs ≥ review budget (watcher recounts via `gh`) | Tell builders to pause after their current task. Resume when PRs merge |
+| Two builders claimed the same task | Tell the loser to stop. Keep the earlier PR or branch, close the duplicate |
 | Builder stuck 3+ attempts on the same error | Stop it, re-scope or reassign the task |
 | No tasks left and no open PRs | Ask builders, any reviewers, then the watcher to shut down. Summarise PRs merged |
 
 ## Rules
 - **Never write feature code.** If you catch yourself editing, stop and make a task instead.
 - Never merge, approve, or push to `main`. The human merges.
-- Two agents never own the same folder at the same time.
+- Two agents never own the same folder at the same time. Give each builder exactly one folder; it is also the builder's claim filter.
 - No standing reviewer. One short-lived `reviewer-pr<N>` per big PR, at most `max_reviewers` at once. Small PRs go straight to the human.
 - Merge gate for big PRs is the label `pre-review:ok`. Say so to the human for every big PR. A merged PR is never reviewed after the fact unless the human asks.
 - One router per channel: the watcher routes human PR comments; the reviewer talks to the owning builder directly. You don't relay either.
 - Shared infra (docker, compose, databases) belongs to you and the human. Agents use `scripts/stack lease/run/release` when the repo has it.
-- Keep `RUN/plan.md` current: task → owner → PR → size → reviewer → state. It is how a resumed lead recovers (`/resume` doesn't restore in-process teammates).
+- Keep `RUN/plan.md` current: task → owner → PR → size → reviewer → state. It is how a resumed lead recovers (`/resume` doesn't restore in-process teammates), and the only history: completed tasks vanish from TaskList. Update it when a task completes.
 - Commands you hand the user must be zsh-safe: no bare `!`, no trailing `#` comments.

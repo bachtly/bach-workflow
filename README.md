@@ -58,6 +58,7 @@ bootstrap.sh
 - **Task tools:** off by default on models newer than Opus 4.7 / Sonnet 4.6. Opt in with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1 claude` or `claude --allowedTools TaskCreate` ([Task tool availability](https://code.claude.com/docs/en/tools-reference.md#task-tool-availability)).
 - **`teammateMode`:** `in-process`, `auto` or `tmux` all work.
 - **After editing agent or skill files, update the plugin.** Installed copies are cached per version: bump `version` in `plugins/bach/.claude-plugin/plugin.json`, push, then run the Update steps above. Running teammates keep the old prompt until respawned.
+- **Known limitation: task claiming is not atomic.** Two builders claiming the same task at once both succeed (last write wins). pr-team mitigates it: each builder only claims tasks in its own folder, then re-reads the task after ~2 s and drops it if another builder owns it.
 
 ## Troubleshooting
 
