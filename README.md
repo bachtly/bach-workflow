@@ -57,9 +57,11 @@ bootstrap.sh
 
 - **Interactive `claude` CLI session inside tmux** (unchanged; see Quick start). Agent SDK, `claude -p` and IDE-extension chat sessions are not supported: they don't spawn teammates, a named `Agent` call there becomes a plain subagent ([agent teams](https://code.claude.com/docs/en/agent-teams.md)).
 - **Agent teams on:** `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in `settings.json` `env` (bootstrap sets it).
+- **Recommended: both env vars in user settings.** Put `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` in `~/.claude/settings.json` `env`, so teammates get them whatever their cwd. Project `.claude/settings.json` still works when the teammate's cwd is the repo root.
 - **Task tools:** off by default on models newer than Opus 4.7 / Sonnet 4.6. Opt in with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1 claude` or `claude --allowedTools TaskCreate` ([Task tool availability](https://code.claude.com/docs/en/tools-reference.md#task-tool-availability)).
 - **`teammateMode`:** `tmux` (bootstrap sets it).
 - **After editing agent or skill files, update the plugin.** Installed copies are cached per version: bump `version` in `plugins/bach/.claude-plugin/plugin.json`, push, then run the Update steps above. Running teammates keep the old prompt until respawned.
+- **Known issue: teammate cwd.** tmux teammates start in the lead's *current* Bash cwd, which persists between commands. Seen on Claude Code 2.1.289: the lead ran `cd .claude/pr-team && python3 …` to edit `plan.md` and stayed there; every teammate spawned after that ran with cwd `<repo>/.claude/pr-team`, was treated as a separate project (transcripts under `~/.claude/projects/-…--claude-pr-team/`), didn't load the repo's `.claude/settings.json`, and so had no Task tools (likely no project hooks either). Teammates spawned before the `cd` were fine. pr-team now `cd`s to the repo root before every spawn, checks each member's `cwd` in `~/.claude/teams/<team>/config.json`, and teammates stop and report `missing Task tools / wrong cwd` instead of working around it.
 - **Known limitation: task claiming is not atomic.** Two builders claiming the same task at once both succeed (last write wins). pr-team mitigates it: each builder only claims tasks in its own folder, then re-reads the task after ~2 s and drops it if another builder owns it.
 
 ## App stack
@@ -98,6 +100,7 @@ Limits:
 | Statusline shows `claude-hud not installed` | `claude plugin install claude-hud@claude-hud` |
 | Teammates don't open in panes | Make sure Claude was started inside a tmux session |
 | pr-team spawns plain subagents, no `~/.claude/teams/*/config.json` | You're in an SDK, `-p` or IDE-extension session; start `claude` in a terminal |
+| Teammate says "No task tools" or reports a wrong cwd | Its `cwd` in `~/.claude/teams/<team>/config.json` isn't the repo root. Shut it down, `cd` to the repo root, respawn |
 | Restore previous settings | Copy the newest `~/.claude/settings.json.bak.*` back over `settings.json` |
 
 ## Not in this repo

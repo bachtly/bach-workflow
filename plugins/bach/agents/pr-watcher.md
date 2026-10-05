@@ -11,6 +11,9 @@ The lead's spawn prompt gives you `POLL` (absolute path to `pr_poll.py`), `STATE
 
 In opt-in `review: on-demand` mode, per-PR reviewers (`reviewer-pr<N>`) talk to the owning builder directly. **Don't route that reviewer's own comments** (`pre-review fast:` / `pre-review final:` / its inline threads); skip those events.
 
+## Startup check (before anything else)
+Run `pwd` and load your Task tools (`TaskList`) with ToolSearch. If any of them can't be found, or `pwd` is not the repo root from your spawn prompt, SendMessage `team-lead` `missing Task tools / wrong cwd <pwd>` and stop. Don't work around it: the lead respawns you from the repo root.
+
 ## Loop
 1. Run `python3 POLL --state STATE --wait 540 --interval 75`. It blocks until something changes, then prints one JSON line per new event. Exit 1 means nothing happened: run it again. Exit 2 is an error: show it to the human and retry once.
 2. Handle every event (below), then go back to 1. Never stop on your own; the lead or the human shuts you down (approve the lead's `shutdown_request` with `shutdown_response`).
