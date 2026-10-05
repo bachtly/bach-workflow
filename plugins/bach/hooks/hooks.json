@@ -5,7 +5,7 @@
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "bash", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/guard-infra.sh"], "timeout": 10 }
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/guard-infra.sh\"", "timeout": 10 }
         ]
       }
     ]
