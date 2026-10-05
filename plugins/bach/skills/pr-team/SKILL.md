@@ -21,10 +21,13 @@ Feature from the user: **$ARGUMENTS**
 |---|---|
 | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is `1` | Add it to `settings.json` `env` (`bootstrap.sh` does this), restart |
 | Running inside tmux (`$TMUX` set) and `teammateMode` is `tmux` | `tmux new -s work`, then `claude` |
+| Interactive terminal `claude`, not Agent SDK, `claude -p` or the VS Code extension chat (those spawn plain subagents, not teammates) | Fail: "pr-team needs an interactive terminal session". Run `claude` in a terminal |
+| Task tools present: `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`, and `TaskCreate` loads via ToolSearch (the Task tools are deferred) | Fail: "Task tools missing". Restart with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1 claude` |
+| After the first spawn, `~/.claude/teams/*/config.json` lists the teammate | Fail: "team didn't form, teammate is a plain subagent". Stop it; no subagent fallback |
 | `gh auth status` ok, repo has a GitHub remote | `gh auth login` |
 | `git status` clean on `main` | Commit or stash first |
 
-Teammate permission prompts appear in **your** pane. Suggest the user allow `Bash(gh:*)` and `Bash(git:*)` for this project if they haven't.
+Teammate permission prompts appear in **your** pane, and teammates start in your permission mode. In auto mode the classifier treats an approval relayed by another agent as untrusted, so the human approves directly or adds allow rules. Suggest the user allow `Bash(gh:*)` and `Bash(git:*)` for this project if they haven't.
 
 ## Step 1 · Plan (plan mode, with the user)
 
@@ -57,16 +60,19 @@ Teammate permission prompts appear in **your** pane. Suggest the user allow `Bas
 
 ## Step 2 · Spawn
 
-1. Create one shared task per planned task (`TaskCreate`), then set `blockedBy` (`TaskUpdate addBlockedBy`). Put folder, files, acceptance criteria and flag in each description.
+1. Load the Task tools with ToolSearch, then create one shared task per planned task (`TaskCreate`), then set `blockedBy` (`TaskUpdate addBlockedBy`). Put folder, files, acceptance criteria and flag in each description.
 2. Spawn teammates with predictable names: `builder-1..N`, `reviewer-1..M`, `pr-watcher`. Use the plugin agent types `bach:pr-builder`, `bach:pr-reviewer`, `bach:pr-watcher`.
+   - Spawn each with the Agent tool and a `name` (no `run_in_background`, no `isolation`). You are `team-lead`; teammates address you and each other by name.
    - If the runtime refuses a plugin agent type as a teammate, spawn a general teammate and paste the body of `AGENTS/<role>.md` at the top of its prompt.
    - Builder prompt: its name, the repo root, "claim tasks from the task list", and the folder-ownership rule.
    - Watcher prompt: `POLL=<absolute path>`, `STATE=<absolute RUN/state.json>`, the list of builder names.
-3. Require plan approval for builders: approve a builder's plan only if its files stay inside the task's folder.
+3. Require plan approval for builders: approve a builder's plan only if its files stay inside the task's folder. Builders send the plan by SendMessage and wait for your reply. Don't use plan-mode spawns for this: the built-in teammate plan approval is granted automatically, without your review ([agent-teams](https://code.claude.com/docs/en/agent-teams.md#have-teammates-plan-before-implementing)).
 
 ## Step 3 · Run (your loop)
 
 You react to teammate messages and task changes. Don't poll.
+
+Teammates send you an `idle_notification` after each turn and stay addressable; idle doesn't mean done. The task list and `RUN/plan.md` are the source of truth.
 
 | Signal | Action |
 |---|---|
@@ -76,7 +82,7 @@ You react to teammate messages and task changes. Don't poll.
 | Watcher: PR merged | Dependent tasks unblock automatically. If builders are idle and ready tasks exist, keep them claiming |
 | Open PRs ≥ review budget | Tell builders to pause after their current task. Resume when PRs merge |
 | Builder stuck 3+ attempts on the same error | Stop it, re-scope or reassign the task |
-| No tasks left and no open PRs | Ask builders, reviewers, then the watcher to shut down. Summarise PRs merged |
+| No tasks left and no open PRs | Ask builders, reviewers, then the watcher to shut down (`shutdown_request`, wait for each `shutdown_response`). Summarise PRs merged |
 
 ## Rules
 - **Never write feature code.** If you catch yourself editing, stop and make a task instead.
