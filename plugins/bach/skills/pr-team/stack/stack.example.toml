@@ -1,0 +1,53 @@
+# App stack config. Copy to the repo root as `stack.toml` and commit it.
+# Values may use ${VAR} or ${VAR:-default}: read from the environment first,
+# then from project.env_file in the main checkout.
+
+[project]
+# name = "myapp"     # registry key under ~/.stack/ (default: $PROJECT_NAME, else the main checkout's folder name)
+env_file = ".env"    # relative to the main checkout
+
+# ---- pools: where slot resources live. One shared Postgres; Redis is optional.
+[pools.db]           # dev DBs: the template, plus <names.dev>N cloned from it
+url = "postgresql+psycopg://app:app@127.0.0.1:${DB_PORT:-5432}"   # no database part; +driver is fine
+env = "DATABASE_URL"                # var a slot job gets: <url>/<names.dev>N
+
+[pools.db_test]      # test DBs: <names.test>N, created empty (your test session builds the schema)
+url = "postgresql+psycopg://app:app@127.0.0.1:${DB_PORT:-5432}"   # omit the table to reuse pools.db
+env = "TEST_DATABASE_URL"
+
+[pools.redis]        # slot N gets Redis DB index N; omit the table if the app has no Redis
+url = "redis://127.0.0.1:${REDIS_PORT:-6379}"
+env = "REDIS_URL"
+
+# ---- names: the stack only ever creates/drops DBs matching these (plus the template).
+[names]
+dev = "app_s"        # app_s1, app_s2, ...
+test = "app_test_s"  # app_test_s1, ...
+
+# ---- template: a migrated + seeded DB that dev DBs are cloned from (~0.25 s per clone).
+[template]
+name = "app_template"           # `stack template refresh` builds app_template_new, then swaps
+cwd = "backend"                 # build commands run here (relative to the worktree root)
+build = [                       # run with pools.db.env pointing at app_template_new
+  "uv run alembic upgrade head",
+  "uv run python scripts/reseed.py",
+]
+revision_sql = "SELECT version_num FROM alembic_version"   # optional: shown by doctor
+migrations = "backend/migrations/versions"                 # optional (alembic): warn when the template is behind main
+
+# ---- ports: slot N gets <NAME>_PORT = base + N and <NAME>_URL = http://127.0.0.1:<port>
+[ports]
+api = 8100           # API_PORT = 8100 + N
+web = 5200           # WEB_PORT = 5200 + N
+
+# ---- limits
+[limits]
+slots = 6            # slots 1..6
+heavy = 2            # concurrent `stack run --heavy` jobs (test suites, builds); the rest queue
+grace_s = 600        # an idle slot (no process in its worktree) is reclaimable after this many seconds,
+                     # but only when every slot is taken and a new lease needs one
+
+# ---- infra: what `stack infra ensure` starts (from the main checkout, never recreates)
+[infra]
+compose_file = "compose.yml"     # relative to the main checkout; --env-file is project.env_file
+services = ["db", "redis"]
