@@ -87,7 +87,7 @@ Limits:
 - **Postgres + Redis only.** Other services (queues, search, object storage) are not sliced.
 - **One shared Postgres.** Slots are logical (separate DBs on the same server). `--heavy` and `limits.heavy` cap concurrent suites; they don't isolate CPU or I/O.
 - **Slots can be reclaimed.** When all slots are taken, a new lease takes the oldest slot whose worktree has no running process and was idle longer than `limits.grace_s`, and drops its DBs.
-- **The hook is a guardrail, not security.** It pattern-matches Bash commands for agents (input has `agent_id`); it misses indirection (scripts, aliases) and has a known false positive on the words `compose down`. The main session is never blocked.
+- **The hook is a guardrail, not security.** It pattern-matches Bash commands for agents (input has `agent_id`); it misses indirection (scripts, aliases) and has a known false positive on the words `compose down`. The lead's own session (no `agent_id`) is never blocked.
 - **Hook scope.** It is a plugin hook, so it is on wherever the plugin is enabled, but it does nothing in repos without `stack.toml` at the git root.
 
 ## Troubleshooting
