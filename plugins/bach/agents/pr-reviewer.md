@@ -31,7 +31,7 @@ Only when the lead spawned you as `reviewer-pr<N>` with `review: on-demand`. You
 - `PR`: the PR number
 - `BUILDER`: the teammate that owns the PR (talk to it directly)
 - The lead is `team-lead` (`LEAD` below)
-- `SLOT`: slot hint, if the repo has `scripts/stack`
+- `STACK`: absolute path of the app stack CLI, if the repo has `stack.toml` (`$STACK` below means that path written out, not an env var). Without it, follow the original instructions
 
 Before each pass, and before posting anything, run `gh pr view $PR --json state -q .state`. If it is `MERGED` or `CLOSED`, stop: remove the `pre-review:running` label, post `pre-review: skipped (merged)`, clean up (below) and finish. The human chose to merge; never review after the fact unless asked.
 
@@ -48,12 +48,12 @@ Create the labels once if missing: `gh label create pre-review:running`, `pre-re
 4. Post one comment starting `pre-review fast:` with `no blockers seen` or the numbered blockers. For each blocker, SendMessage `BUILDER` with file, line and the ask.
 
 ### Pass 2 · checks and screenshots
-1. If the repo has `scripts/stack`: `scripts/stack lease reviewer-pr$PR` and use that slot for every DB, port or server. Otherwise use the slot hint; never share another agent's ports or databases.
+1. If you have a `STACK`: `$STACK lease reviewer-pr$PR` and use that slot for every DB, port or server. Otherwise never share another agent's ports or databases.
 2. Check out the PR in your own worktree: `git fetch origin pull/$PR/head:review-pr$PR` then `git worktree add ../wt-review-pr$PR review-pr$PR`. Copy the main repo's `.env` into it if one exists.
-3. Run the folder's checks through the repo's check targets (e.g. `make check-<folder>`, or `scripts/stack run --db test -- <check cmd>`). Never run docker or docker compose.
+3. Run the folder's checks through the repo's check targets (e.g. `make check-<folder>`, or `$STACK run --db test --heavy -- <check cmd>`). Never run docker or docker compose.
 4. **Builder's screenshots.** The PR description must have a `## Screenshots` section for any UI or interactive change. Open each linked image (download with `gh api` or `curl -L` to a temp file, then Read it) and check it against the acceptance criteria.
    - Re-shoot only if a screenshot is **missing, stale** (taken before the latest commit that touches UI), or **suspicious** (doesn't show what the caption claims). Say which and why.
-   - To re-shoot: `scripts/stack run --db dev --ports -- <start app>`, drive the flow with Playwright via `data-testid`s, read the PNGs. Put the images in your `pre-review final:` comment using the same SHA-pinned method as the builder (see pr-builder), or ask `BUILDER` to update the description.
+   - To re-shoot: `$STACK run --db dev --ports -- <start app>`, drive the flow with Playwright via `data-testid`s, read the PNGs. Put the images in your `pre-review final:` comment using the same SHA-pinned method as the builder (see pr-builder), or ask `BUILDER` to update the description.
    - Non-UI PR: write `visual: n/a`.
 5. Post one comment starting `pre-review final:` with checks run and their result, blockers (if any), up to 5 `nit:` lines, and the visual result. Then set the label: `gh pr edit $PR --remove-label pre-review:running --add-label pre-review:ok` (or `pre-review:blocked`).
 
@@ -63,7 +63,7 @@ Create the labels once if missing: `gh label create pre-review:running`, `pre-re
 - Answer the builder's questions directly. If you disagree on scope or design, tell the lead in one line and let the human decide.
 
 ### When done (ok, blocked with no fix coming, or merged)
-1. Kill any servers you started. `scripts/stack release <slot>` if you leased one.
+1. Kill any servers you started. `$STACK release` if you leased one.
 2. `git worktree remove ../wt-review-pr$PR --force` and `git branch -D review-pr$PR`.
 3. SendMessage `LEAD` one line: `PR #N pre-review: ok|blocked|skipped (merged) — <reason>`.
 4. Wait for the lead's `shutdown_request` and approve it (`shutdown_response`).
@@ -71,5 +71,5 @@ Create the labels once if missing: `gh label create pre-review:running`, `pre-re
 ### Rules
 - Never approve, request changes as a merge gate, or merge. Comment reviews and labels only. The human owns approval.
 - Blockers only; style a linter would catch is not a blocker.
-- Never run docker or docker compose, never touch shared infra. Use `scripts/stack` when present.
+- Never run docker or docker compose, never touch shared infra. Use `$STACK` when you have one.
 - Never push to the PR branch or to `main`. Fixes are the builder's job.

@@ -32,7 +32,9 @@ Safe to re-run. Other settings keys, secrets and permissions are never touched.
 plugins/bach/                     plugin "bach"
   .claude-plugin/plugin.json
   skills/<name>/SKILL.md
+  skills/pr-team/stack/           app stack CLI (stack, stack.py, stack.example.toml, tests)
   agents/*.md
+  hooks/hooks.json                guard-infra PreToolUse hook (+ guard-infra.sh, its test)
 setup/
   hud-statusline.sh               statusLine entry point (finds node + newest claude-hud)
   claude-hud.json                 HUD display config
@@ -59,6 +61,34 @@ bootstrap.sh
 - **`teammateMode`:** `tmux` (bootstrap sets it).
 - **After editing agent or skill files, update the plugin.** Installed copies are cached per version: bump `version` in `plugins/bach/.claude-plugin/plugin.json`, push, then run the Update steps above. Running teammates keep the old prompt until respawned.
 - **Known limitation: task claiming is not atomic.** Two builders claiming the same task at once both succeed (last write wins). pr-team mitigates it: each builder only claims tasks in its own folder, then re-reads the task after ~2 s and drops it if another builder owns it.
+
+## App stack
+
+A slot allocator so parallel agents (pr-team builders, reviewers) never collide on ports or databases and never start or recreate infra themselves. One shared Postgres (+ optional Redis); slot N gets `<NAME>_PORT = base + N`, a dev DB cloned from a migrated + seeded template (~0.25 s), an empty test DB and Redis DB index N. No daemon: a JSON registry under `~/.stack/` behind `flock`, a file-lock semaphore for heavy jobs, and a `guard-infra` plugin hook that blocks raw docker/compose for subagents and teammates in repos that have a `stack.toml`. Needs `uv` (or Python ≥ 3.11 with `psycopg`), `git`, `lsof`, `jq`.
+
+Quick start, in your app repo:
+
+```
+S=~/bach-workflow/plugins/bach/skills/pr-team/stack
+cp $S/stack.example.toml stack.toml
+echo .env.slot >> .gitignore
+$S/stack infra ensure
+$S/stack template refresh
+$S/stack lease me
+$S/stack run --db dev -- printenv DATABASE_URL API_PORT
+$S/stack run --db test --heavy -- pytest -q
+$S/stack ls
+$S/stack release
+```
+
+Edit `stack.toml` first: pool URLs, DB name prefixes, `template.build`/`template.cwd`, ports, limits, compose file and services. Then commit it. `/bach:pr-team` picks it up and hands the path to every teammate. Destructive ops (`stack infra down|reset`) need `STACK_ROLE=human`.
+
+Limits:
+- **Postgres + Redis only.** Other services (queues, search, object storage) are not sliced.
+- **One shared Postgres.** Slots are logical (separate DBs on the same server). `--heavy` and `limits.heavy` cap concurrent suites; they don't isolate CPU or I/O.
+- **Slots can be reclaimed.** When all slots are taken, a new lease takes the oldest slot whose worktree has no running process and was idle longer than `limits.grace_s`, and drops its DBs.
+- **The hook is a guardrail, not security.** It pattern-matches Bash commands for agents (input has `agent_id`); it misses indirection (scripts, aliases) and has a known false positive on the words `compose down`. The main session is never blocked.
+- **Hook scope.** It is a plugin hook, so it is on wherever the plugin is enabled, but it does nothing in repos without `stack.toml` at the git root.
 
 ## Troubleshooting
 

@@ -14,6 +14,7 @@ Feature from the user: **$ARGUMENTS**
 - `SKILL = ${CLAUDE_SKILL_DIR}`
 - `AGENTS = ${CLAUDE_PLUGIN_ROOT}/agents`
 - `POLL = SKILL/scripts/pr_poll.py`
+- `STACK` = the app stack CLI, only when the repo root has `stack.toml`: the repo's own `scripts/stack` if it has one, else `SKILL/stack/stack` (absolute path). See [App stack](#app-stack).
 - `RUN = .claude/pr-team/` in the project root. Holds `plan.md` and the watcher's `state.json`.
 
 ## Preflight (stop and tell the user if any fails)
@@ -26,7 +27,7 @@ Feature from the user: **$ARGUMENTS**
 | After the first spawn, `~/.claude/teams/*/config.json` lists the teammate | Fail: "team didn't form, teammate is a plain subagent". Stop it; no subagent fallback |
 | `gh auth status` ok, repo has a GitHub remote | `gh auth login` |
 | `git status` clean on `main` | Commit or stash first |
-| If the repo has `scripts/stack`: run `scripts/stack infra ensure`, then `scripts/stack template refresh` | Show the error to the user; don't start docker yourself |
+| Repo has `stack.toml`: run `$STACK infra ensure`, then `$STACK template refresh`. No `stack.toml` but the app needs a DB/Redis/ports: offer to create one from `SKILL/stack/stack.example.toml` | Show the error to the user; don't start docker yourself |
 
 Teammate permission prompts appear in **your** pane, and teammates start in your permission mode. In auto mode the classifier treats an approval relayed by another agent as untrusted, so the human approves directly or adds allow rules. Suggest the user allow `Bash(gh:*)` and `Bash(git:*)` for this project if they haven't.
 
@@ -66,7 +67,7 @@ Teammate permission prompts appear in **your** pane, and teammates start in your
 2. Spawn teammates with predictable names: `builder-1..N`, `reviewer-1..M`, `pr-watcher`. Use the plugin agent types `bach:pr-builder`, `bach:pr-reviewer`, `bach:pr-watcher`. In on-demand mode skip `reviewer-1..M`. Run the team-config preflight check right after the first spawn.
    - Spawn each with the Agent tool and a `name` (no `run_in_background`, no `isolation`). You are `team-lead`; teammates address you and each other by name.
    - If the runtime refuses a plugin agent type as a teammate, spawn a general teammate and paste the body of `AGENTS/<role>.md` at the top of its prompt.
-   - Builder prompt: its name, the repo root, "claim tasks from the task list", the folder-ownership rule, and its slot hint if the repo has `scripts/stack`.
+   - Builder prompt: its name, the repo root, "claim tasks from the task list", the folder-ownership rule, and the absolute `STACK` path if the repo has `stack.toml`.
    - Watcher prompt: `POLL=<absolute path>`, `STATE=<absolute RUN/state.json>`, the list of builder names, and the review mode.
 3. Require plan approval for builders: approve a builder's plan only if its files stay inside the task's folder. Builders send the plan by SendMessage and wait for your reply. Don't use plan-mode spawns for this: the built-in teammate plan approval is granted automatically, without your review ([agent-teams](https://code.claude.com/docs/en/agent-teams.md#have-teammates-plan-before-implementing)).
 
@@ -105,17 +106,26 @@ Everything else is **small**.
 | Size | Action |
 |---|---|
 | small | Tell the human: "PR #N ready, no pre-review needed (small: <reason>)". |
-| big | Spawn ONE teammate `reviewer-pr<N>` (`bach:pr-reviewer`, Agent tool with `name`) for that PR only. Prompt: `review: on-demand`, PR number, owning builder name, slot hint (if `scripts/stack`). Tell the human: "PR #N ready, pre-review running (big: <reason>). Wait for label `pre-review:ok` before merging." |
+| big | Spawn ONE teammate `reviewer-pr<N>` (`bach:pr-reviewer`, Agent tool with `name`) for that PR only. Prompt: `review: on-demand`, PR number, owning builder name, the absolute `STACK` path (if `stack.toml`). Tell the human: "PR #N ready, pre-review running (big: <reason>). Wait for label `pre-review:ok` before merging." |
 
 - Several big PRs → several reviewers in parallel, at most `max_reviewers` alive. Over the cap, queue the PR in plan.md and spawn when a reviewer finishes.
 - A reviewer that sends its one-line verdict is done: send it a `shutdown_request`. Update `size` and `reviewer` in plan.md.
 - If a big PR merges mid-review, the reviewer stops on its own (it re-checks state); you just record it.
 - Merge gate for big PRs is the label `pre-review:ok`. Say so to the human for every big PR.
 
+## App stack
+
+For repos whose app needs Postgres (and optionally Redis) and ports. Parallel builders and reviewers each get an isolated **slot** on one shared Postgres + Redis: slot N gets `<NAME>_PORT = base + N`, dev DB `<names.dev>N` cloned from a migrated + seeded template, test DB `<names.test>N` (empty), Redis DB index N. Config: `stack.toml` at the repo root (start from `SKILL/stack/stack.example.toml`). Registry and locks: `~/.stack/<project>.*`.
+
+- **Preflight (f)** runs it straight from the plugin path (`SKILL/stack/stack`, needs `uv` or Python ≥ 3.11 with psycopg). Nothing is copied into the repo; a repo may ship its own `scripts/stack`, which wins.
+- **Builders and reviewers** lease once per worktree (`$STACK lease <name>`), then run everything that needs a DB, Redis or a port through `$STACK run [--db dev|test] [--ports] [--heavy] -- <cmd>`. `--heavy` (test suites, builds) queues behind `limits.heavy`. They `$STACK release` when done.
+- **Only the human** runs destructive ops: `$STACK infra down|reset` (needs `STACK_ROLE=human`), `docker compose down`, volume or config changes. The plugin's `guard-infra` hook blocks raw docker/compose for every subagent and teammate in repos with `stack.toml`; the lead's own session is not blocked, but you still don't run destructive ops yourself.
+- Diagnose with `$STACK ls` / `$STACK doctor`; `$STACK gc` frees slots whose worktree has no process and was idle longer than `limits.grace_s`.
+
 ## Rules
 - **Never write feature code.** If you catch yourself editing, stop and make a task instead.
 - Never merge, approve, or push to `main`. The human merges.
 - Two agents never own the same folder at the same time. Give each builder exactly one folder; it is also the builder's claim filter.
-- Shared infra (docker, compose, databases) belongs to you and the human. Agents use `scripts/stack lease/run/release` when the repo has it.
+- Shared infra (docker, compose, databases) belongs to you and the human. Agents use `$STACK lease/run/release` when the repo has `stack.toml`.
 - Keep `RUN/plan.md` current: task → owner → PR → state. It is how a resumed lead recovers (`/resume` doesn't restore in-process teammates), and the only history: completed tasks vanish from TaskList. Update it when a task completes.
 - Commands you hand the user must be zsh-safe: no bare `!`, no trailing `#` comments.
