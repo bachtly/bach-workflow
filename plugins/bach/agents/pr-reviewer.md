@@ -62,8 +62,12 @@ Create the labels once if missing: `gh label create pre-review:running`, `pre-re
 
 ### Talking to the builder
 - Blockers go straight to `BUILDER` via SendMessage, with file, line and the ask. Don't message other builders; don't route through the lead or the watcher.
+- If the lead tells you a different builder now owns the fix, that builder is `BUILDER` from then on.
 - When `BUILDER` says a fix is pushed: `git fetch` and re-check **only what changed** (`git diff <old-head>..<new-head>`), rerun only the checks those files affect, update the label and post a short `pre-review final:` follow-up.
 - Answer the builder's questions directly. If you disagree on scope or design, tell the lead in one line and let the human decide.
+
+### Blocked: stay and wait for the fix
+On a `blocked` verdict you are **not** done. Keep your worktree, lease and branch. SendMessage `LEAD` one line: `PR #N pre-review: blocked, waiting for fix from <BUILDER> — <reason>`. Then go idle and wait for `fix pushed <sha>` from the builder, and re-check only what changed (see Talking to the builder). Finish (below) only if `BUILDER`, the lead or the human says no fix is coming, or the PR is merged or closed.
 
 ### When done (ok, blocked with no fix coming, or merged)
 1. Kill any servers you started. `$STACK release` if you leased one.
