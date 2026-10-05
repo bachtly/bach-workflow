@@ -1,10 +1,10 @@
 export const meta = {
   name: 'demo-scope-plan',
-  description: 'demo-scope Phase D: apply clarify answers, read-only plan + tasks (Opus medium), rule check, one fix round',
+  description: 'demo-scope Phase D: apply clarify answers, feature roadmap with dependency waves (Opus medium), rule check, one fix round',
   whenToUse: 'Invoked by the demo-scope skill after the user answers clarify questions and locks scope',
   phases: [
     { title: 'Finalize spec', detail: 'Opus low: apply clarify answers and analyze fixes to spec.md', model: 'opus' },
-    { title: 'Plan', detail: 'Opus medium: plan.md + tasks.md, no code', model: 'opus' },
+    { title: 'Plan', detail: 'Opus medium: roadmap.md (features, deps, parallel waves), no tasks', model: 'opus' },
     { title: 'Check', detail: 'Sonnet low rule check; Opus low fix round if needed', model: 'sonnet' },
   ],
 }
@@ -25,23 +25,19 @@ Keep the template structure. Do not add scope: anything new goes to the Later li
   { label: 'apply answers', phase: 'Finalize spec', model: 'opus', effort: 'low' })
 
 phase('Plan')
-const PLAN_RULES = `Rules:
-- Do NOT write application code. Read only specs/spec.md, ${RUN}/scope/demo.md and, if present, the target repo's CLAUDE.md (${A.repo || 'none given'}).
-- tasks ordered by demo beat as thin end-to-end vertical slices; end of day 1 = walking skeleton where every beat is clickable and deployed.
-- Task 1 = 30-minute spike on the riskiest dependency named in spec.md, with its fallback.
-- Each Build item keeps ≤6 acceptance criteria; split it otherwise.
-- Include tasks for seeded demo data, the cached fallback, a "no secrets in client code" check, code freeze, 3 rehearsals and the backup video.
-- Note any conflict between spec.md and CLAUDE.md.`
-await agent(`${PLAN_RULES}\n\nWrite ${RUN}/plan.md (approach, day 1 / day 2 schedule with hours, risks) and ${RUN}/tasks.md (checkbox list, each task with beat, estimate, acceptance criteria ids). Return "ok".`,
-  { label: 'plan', phase: 'Plan', model: 'opus', effort: 'medium' })
+const PLAN_RULES = `Goal: a short ROADMAP, not a build plan. Do not write code, tasks or schedules; the user plans each feature later together with pr-team.
+Read specs/spec.md, ${RUN}/scope/demo.md, ${RUN}/scope/cut.md and, if present, the target repo's CLAUDE.md (${A.repo || 'none given'}).
+The roadmap must make clear: which features exist (as many as the scope needs), what each depends on, and which can be built in parallel. Keep it brief; link to spec.md AC ids instead of repeating detail.`
+await agent(`${PLAN_RULES}\n\nWrite ${RUN}/roadmap.md. Return "ok".`,
+  { label: 'roadmap', phase: 'Plan', model: 'opus', effort: 'medium' })
 
 phase('Check')
-let check = await agent(`Check ${RUN}/plan.md and ${RUN}/tasks.md against these rules and against ${RUN}/specs/spec.md. Change nothing.\n${PLAN_RULES}\nAlso fail if total estimated build hours exceed 14 for Build items or 24 overall. Return {ok, problems, tasks}.`,
+let check = await agent(`Check ${RUN}/roadmap.md against ${RUN}/specs/spec.md and ${RUN}/scope/cut.md. Change nothing.\n${PLAN_RULES}\nFail only if a Build item from cut.md is missing, dependencies are unclear or contradictory, or parallel work is not visible. Return {ok, problems, tasks} where tasks = number of features.`,
   { label: 'rule check', phase: 'Check', model: 'sonnet', effort: 'low', schema: RESULT })
 if (check && !check.ok) {
-  await agent(`Fix these problems in ${RUN}/plan.md and ${RUN}/tasks.md without adding scope:\n- ${check.problems.join('\n- ')}\n${PLAN_RULES}\nReturn "ok".`,
+  await agent(`Fix these problems in ${RUN}/roadmap.md without adding scope:\n- ${check.problems.join('\n- ')}\n${PLAN_RULES}\nReturn "ok".`,
     { label: 'fix round', phase: 'Check', model: 'opus', effort: 'low' })
-  check = await agent(`Re-check ${RUN}/plan.md and ${RUN}/tasks.md against the rules below and ${RUN}/specs/spec.md. Change nothing.\n${PLAN_RULES}\nReturn {ok, problems, tasks}.`,
+  check = await agent(`Re-check ${RUN}/roadmap.md against the rules below, ${RUN}/specs/spec.md and ${RUN}/scope/cut.md. Change nothing.\n${PLAN_RULES}\nReturn {ok, problems, tasks}.`,
     { label: 're-check', phase: 'Check', model: 'sonnet', effort: 'low', schema: RESULT })
 }
 return check
