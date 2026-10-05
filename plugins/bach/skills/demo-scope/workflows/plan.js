@@ -27,7 +27,11 @@ Keep the template structure. Do not add scope: anything new goes to the Later li
 phase('Plan')
 const PLAN_RULES = `Goal: a short ROADMAP, not a build plan. Do not write code, tasks or schedules; the user plans each feature later together with pr-team.
 Read specs/spec.md, ${RUN}/scope/demo.md, ${RUN}/scope/cut.md and, if present, the target repo's CLAUDE.md (${A.repo || 'none given'}).
-The roadmap must make clear: which features exist (as many as the scope needs), what each depends on, and which can be built in parallel. Keep it brief; link to spec.md AC ids instead of repeating detail.`
+The roadmap must make clear: which features exist (as many as the scope needs), what each depends on, and which can be built in parallel. Keep it brief; link to spec.md AC ids instead of repeating detail.
+Format (SKILL.md and pr-team rely on it):
+- One section per feature headed \`## F<n> · <name>\` (n = 1, 2, ...), each with: Status (⬜/✅), Depends on (F ids or none), AC ids, one-line goal.
+- A Mermaid dependency graph of the F ids.
+- A waves table: Wave | Features (features in one wave have no dependency on each other and can run in parallel).`
 await agent(`${PLAN_RULES}\n\nWrite ${RUN}/roadmap.md. Return "ok".`,
   { label: 'roadmap', phase: 'Plan', model: 'opus', effort: 'medium' })
 
