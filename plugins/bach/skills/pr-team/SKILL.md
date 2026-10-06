@@ -1,6 +1,6 @@
 ---
 name: pr-team
-description: Lead an agent team that ships a feature as many small, self-contained PRs in parallel. Plans the task graph and folder map, fans builders out horizontally or vertically, adds a pre-reviewer and a PR watcher (own tmux pane) that routes review comments back to builders. Use when the user wants to build a feature with parallel agents, small PRs, or continuous PR delivery.
+description: Lead an agent team that ships a feature as many small, self-contained PRs in parallel. Plans the task graph and folder map, fans builders out horizontally or vertically, adds a pre-reviewer and a PR watcher (own tmux pane) that routes review comments back to builders. Opt-in `review: on-demand` replaces the standing reviewer with a short-lived per-PR reviewer for big PRs only. Use when the user wants to build a feature with parallel agents, small PRs, or continuous PR delivery.
 disable-model-invocation: true
 ---
 
@@ -51,17 +51,18 @@ Teammate permission prompts appear in **your** pane. Suggest the user allow `Bas
    - Builders = min(tasks ready now, disjoint folders, 5). Above 5, coordination costs more than it adds.
    - Queue 5–6 tasks per builder so each self-claims the next one.
    - 1 `pr-reviewer` per 3–4 builders (at least 1 when builders ≥ 2).
+   - **Opt-in `review: on-demand`** (only if the user asks for it, or passes `review: on-demand` in the args or plan.md): no standing reviewer; reviewers are spawned per big PR in Step 4 (cap `max_reviewers`, default 3).
    - 1 `pr-watcher`, always.
 7. **Review budget.** Ask the user how many open PRs they can keep up with (default 5). This is the WIP limit on open PRs, not on agents.
-8. Write `RUN/plan.md` (task table + shape + team + review budget) and present it. Exit plan mode only after the user approves.
+8. Write `RUN/plan.md` (task table + shape + team + review budget + review mode) and present it. In on-demand mode the task table also has `size | reviewer` columns, plus `max_reviewers`. Exit plan mode only after the user approves.
 
 ## Step 2 · Spawn
 
 1. Create one shared task per planned task (`TaskCreate`), then set `blockedBy` (`TaskUpdate addBlockedBy`). Put folder, files, acceptance criteria and flag in each description.
-2. Spawn teammates with predictable names: `builder-1..N`, `reviewer-1..M`, `pr-watcher`. Use the plugin agent types `bach:pr-builder`, `bach:pr-reviewer`, `bach:pr-watcher`.
+2. Spawn teammates with predictable names: `builder-1..N`, `reviewer-1..M`, `pr-watcher`. Use the plugin agent types `bach:pr-builder`, `bach:pr-reviewer`, `bach:pr-watcher`. In on-demand mode skip `reviewer-1..M`.
    - If the runtime refuses a plugin agent type as a teammate, spawn a general teammate and paste the body of `AGENTS/<role>.md` at the top of its prompt.
-   - Builder prompt: its name, the repo root, "claim tasks from the task list", and the folder-ownership rule.
-   - Watcher prompt: `POLL=<absolute path>`, `STATE=<absolute RUN/state.json>`, the list of builder names.
+   - Builder prompt: its name, the repo root, "claim tasks from the task list", the folder-ownership rule, and the review mode.
+   - Watcher prompt: `POLL=<absolute path>`, `STATE=<absolute RUN/state.json>`, the list of builder names, and the review mode.
 3. Require plan approval for builders: approve a builder's plan only if its files stay inside the task's folder.
 
 ## Step 3 · Run (your loop)
@@ -73,10 +74,39 @@ You react to teammate messages and task changes. Don't poll.
 | Builder plan arrives | Approve if in-scope; otherwise send it back with the rubric line it breaks |
 | Builder needs a file outside its folder | Make a new task for that folder (or a contract task), add `blockedBy`, tell the builder to finish without it or wait |
 | Task completed with a PR URL | Check the rubric quickly; tell the user "PR #n ready for review: <title>" |
+| Builder reports a new PR (on-demand mode) | Step 4: classify, then tell the human or spawn `reviewer-pr<N>` |
+| Reviewer verdict `ok` (on-demand mode) | Record in plan.md, shut the reviewer down. Tell the human "PR #N pre-review ok, ready to merge" |
+| Reviewer says `blocked` (on-demand mode) | Keep the reviewer (no `shutdown_request`). Route the fix to the owning builder and give it the reviewer's name; wait for the re-check. Tell the human only if it needs a decision |
+| Watcher: human-comment fix round started / ended | Record in plan.md. Don't route fixes yourself |
 | Watcher: PR merged | Dependent tasks unblock automatically. If builders are idle and ready tasks exist, keep them claiming |
 | Open PRs ≥ review budget | Tell builders to pause after their current task. Resume when PRs merge |
 | Builder stuck 3+ attempts on the same error | Stop it, re-scope or reassign the task |
 | No tasks left and no open PRs | Ask builders, reviewers, then the watcher to shut down. Summarise PRs merged |
+
+## Step 4 · Review on demand (opt-in, `review: on-demand` only)
+
+Skip this step in the default mode. A builder reports each PR to you right after `gh pr create`, with size hints. Classify it at once (read `gh pr diff <n> --name-only` and `gh pr view <n> --json additions,deletions` if the hints are thin).
+
+**Big** = any of:
+- interactive UI (popup, panel, form, buttons, animation, toggle) or a visible page change
+- API contract, schema or migration, or security-sensitive code (auth, secrets, input sanitising, permissions)
+- more than ~300 changed lines, excluding generated files (lockfiles, codegen output, snapshots)
+- the builder says it is not verified in a browser, or that tests were skipped
+
+Everything else is **small**.
+
+| Size | Action |
+|---|---|
+| small | Tell the human: "PR #N ready, no pre-review needed (small: <reason>)". |
+| big | Spawn ONE teammate `reviewer-pr<N>` (`bach:pr-reviewer`, Agent tool with `name`) for that PR only. Prompt: `review: on-demand`, PR number, owning builder name, repo root. Tell the human: "PR #N ready, pre-review running (big: <reason>). Wait for label `pre-review:ok` before merging." |
+
+- Several big PRs → several reviewers in parallel, at most `max_reviewers` alive. Over the cap, queue the PR in plan.md and spawn when a reviewer finishes.
+- A reviewer that sends an `ok` verdict is done: send it a `shutdown_request`. Update `size` and `reviewer` in plan.md.
+- **`blocked`: keep the reviewer.** Don't shut it down and don't spawn a new reviewer for the same PR. Tell the owning builder: "reviewer `reviewer-pr<N>` is waiting on PR #N; fix, push, then send it `fix pushed <sha>`". The builder and reviewer talk directly; the reviewer re-checks only `git diff <old>..<new>` and sends a new verdict.
+  - Owning builder gone (shut down or busy elsewhere): spawn or assign a builder for the fix, keep the same reviewer, and give the new builder the reviewer's name. Tell the reviewer the new builder's name.
+  - Shut a reviewer down only on: `ok`, the PR merged or closed, or the builder or human saying no fix is coming.
+- If a big PR merges mid-review, the reviewer stops on its own (it re-checks state); you just record it.
+- Merge gate for big PRs is the label `pre-review:ok`. Say so to the human for every big PR.
 
 ## Rules
 - **Never write feature code.** If you catch yourself editing, stop and make a task instead.
