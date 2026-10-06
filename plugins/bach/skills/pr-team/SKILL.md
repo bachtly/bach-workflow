@@ -23,6 +23,8 @@ Feature from the user: **$ARGUMENTS**
 | Running inside tmux (`$TMUX` set) and `teammateMode` is `tmux` | `tmux new -s work`, then `claude` |
 | `gh auth status` ok, repo has a GitHub remote | `gh auth login` |
 | `git status` clean on `main` | Commit or stash first |
+| Dev env: if the repo's CLAUDE.md has a `## Parallel agents` section, run the lead steps it lists (e.g. start shared infra, refresh a DB template) | Show the error to the user; don't fix infra yourself |
+| No such section, but the app needs a DB, Redis or fixed ports | Warn the user once: parallel builders may collide on them. Suggest adding the section ([dev env contract](#dev-env-contract)); run with fewer builders until then |
 
 Teammate permission prompts appear in **your** pane. Suggest the user allow `Bash(gh:*)` and `Bash(git:*)` for this project if they haven't.
 
@@ -60,7 +62,7 @@ Teammate permission prompts appear in **your** pane. Suggest the user allow `Bas
 1. Create one shared task per planned task (`TaskCreate`), then set `blockedBy` (`TaskUpdate addBlockedBy`). Put folder, files, acceptance criteria and flag in each description.
 2. Spawn teammates with predictable names: `builder-1..N`, `reviewer-1..M`, `pr-watcher`. Use the plugin agent types `bach:pr-builder`, `bach:pr-reviewer`, `bach:pr-watcher`.
    - If the runtime refuses a plugin agent type as a teammate, spawn a general teammate and paste the body of `AGENTS/<role>.md` at the top of its prompt.
-   - Builder prompt: its name, the repo root, "claim tasks from the task list", and the folder-ownership rule.
+   - Builder prompt: its name, the repo root, "claim tasks from the task list", the folder-ownership rule, and "follow CLAUDE.md `## Parallel agents` for DB, ports and tests" if the repo has that section.
    - Watcher prompt: `POLL=<absolute path>`, `STATE=<absolute RUN/state.json>`, the list of builder names.
 3. Require plan approval for builders: approve a builder's plan only if its files stay inside the task's folder.
 
@@ -78,9 +80,20 @@ You react to teammate messages and task changes. Don't poll.
 | Builder stuck 3+ attempts on the same error | Stop it, re-scope or reassign the task |
 | No tasks left and no open PRs | Ask builders, reviewers, then the watcher to shut down. Summarise PRs merged |
 
+## Dev env contract
+
+pr-team doesn't ship or require any infra tooling. How an agent gets an isolated DB, Redis or ports in its worktree is the **repo's** business, written in its CLAUDE.md under `## Parallel agents` (teammates load CLAUDE.md on their own). A good section says:
+- how an agent gets its own env (e.g. a slot lease, a per-worktree compose project, a devcontainer) and how it releases it
+- how to run tests and start servers inside that env
+- what agents must never run (e.g. `docker compose down`, recreating the shared DB)
+- what the lead runs once before spawning (e.g. start shared infra)
+
+Without the section, agents never start, stop or recreate infra and don't take ports another agent uses; that is the plugin's whole default.
+
 ## Rules
 - **Never write feature code.** If you catch yourself editing, stop and make a task instead.
 - Never merge, approve, or push to `main`. The human merges.
 - Two agents never own the same folder at the same time.
+- Shared infra (docker, compose, databases) belongs to you and the human. Agents use only what the repo's `## Parallel agents` section gives them.
 - Keep `RUN/plan.md` current: task → owner → PR → state. It is how a resumed lead recovers (`/resume` doesn't restore in-process teammates).
 - Commands you hand the user must be zsh-safe: no bare `!`, no trailing `#` comments.
