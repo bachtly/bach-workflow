@@ -1,6 +1,6 @@
 ---
 name: pr-team
-description: Lead an agent team that ships a feature as many small, self-contained PRs in parallel. Plans the task graph and folder map, fans builders out horizontally or vertically, adds a pre-reviewer and a PR watcher (own tmux pane) that routes review comments back to builders. Opt-in `review: on-demand` replaces the standing reviewer with a short-lived per-PR reviewer for big PRs only. Use when the user wants to build a feature with parallel agents, small PRs, or continuous PR delivery.
+description: Lead an agent team that ships a feature as many small, self-contained PRs in parallel. Plans the task graph and folder map, fans builders out horizontally or vertically, adds a pre-reviewer and a PR watcher (own tmux pane) that routes review comments back to builders. Opt-in `review: on-demand` replaces the standing reviewer with a short-lived per-PR reviewer for big PRs only. Opt-in `lessons: on` keeps a shared review-lessons file that builders read before planning and reviewers check against. Use when the user wants to build a feature with parallel agents, small PRs, or continuous PR delivery.
 disable-model-invocation: true
 ---
 
@@ -16,6 +16,7 @@ Feature from the user: **$ARGUMENTS**
 - `POLL = SKILL/scripts/pr_poll.py`
 - `STACK` = the app stack CLI, only when the repo root has `stack.toml`: the repo's own `scripts/stack` if it has one, else `SKILL/stack/stack` (absolute path). See [App stack](#app-stack).
 - `RUN = .claude/pr-team/` in the project root. Holds `plan.md` and the watcher's `state.json`.
+- `LESSONS = RUN/review-lessons.md`, only in [review lessons](#review-lessons-opt-in) mode.
 
 ## Preflight (stop and tell the user if any fails)
 | Check | Fix |
@@ -64,8 +65,9 @@ Teammate permission prompts appear in **your** pane, and teammates start in your
    - 1 `pr-reviewer` per 3–4 builders (at least 1 when builders ≥ 2).
    - **Opt-in `review: on-demand`** (only if the user asks for it, or passes `review: on-demand` in the args or plan.md): no standing reviewer; reviewers are spawned per big PR in Step 4 (cap `max_reviewers`, default 3).
    - 1 `pr-watcher`, always.
+   - **Opt-in review lessons**: on when `LESSONS` already exists, or the user passes `lessons: on` (then copy `SKILL/templates/review-lessons.md` to `LESSONS`). See [Review lessons](#review-lessons-opt-in).
 7. **Review budget.** Ask the user how many open PRs they can keep up with (default 5). This is the WIP limit on open PRs, not on agents.
-8. Write `RUN/plan.md` (task table + shape + team + review budget + review mode) and present it. Task table columns: `id | folder | files | blockedBy | flag | owner | PR | state`; in on-demand mode add `size | reviewer` and `max_reviewers`. Exit plan mode only after the user approves.
+8. Write `RUN/plan.md` (task table + shape + team + review budget + review mode + lessons on/off) and present it. Task table columns: `id | folder | files | blockedBy | flag | owner | PR | state`; in on-demand mode add `size | reviewer` and `max_reviewers`. Exit plan mode only after the user approves.
 
 ## Step 2 · Spawn
 
@@ -77,6 +79,7 @@ Teammate permission prompts appear in **your** pane, and teammates start in your
    - Every prompt includes the absolute repo root (teammates check `pwd` against it).
    - Builder prompt: its name, the repo root, "claim tasks from the task list", the folder-ownership rule, and the absolute `STACK` path if the repo has `stack.toml`.
    - Watcher prompt: `POLL=<absolute path>`, `STATE=<absolute RUN/state.json>`, the list of builder names, and the review mode.
+   - Lessons mode: every builder, reviewer and watcher prompt also gets `LESSONS=<absolute path>`.
 3. Require plan approval for builders: approve a builder's plan only if its files stay inside the task's folder. Builders send the plan by SendMessage and wait for your reply. Don't use plan-mode spawns for this: the built-in teammate plan approval is granted automatically, without your review ([agent-teams](https://code.claude.com/docs/en/agent-teams.md#have-teammates-plan-before-implementing)).
 
 ## Step 3 · Run (your loop)
@@ -94,6 +97,7 @@ Teammates send you an `idle_notification` after each turn and stay addressable; 
 | Reviewer verdict `ok` (on-demand mode) | Record in plan.md, shut the reviewer down. Tell the human "PR #N pre-review ok, ready to merge" |
 | Reviewer says `blocked` (on-demand mode) | Keep the reviewer (no `shutdown_request`). Route the fix to the owning builder and give it the reviewer's name; wait for the re-check. Tell the human only if it needs a decision (Step 4) |
 | Watcher: human-comment fix round started / ended | Record in plan.md. Don't route fixes yourself |
+| `lesson: …` from a reviewer or the watcher (lessons mode) | Add it to `LESSONS` (rules below), then tell builders whose folder it matches, in one line |
 | Watcher: PR merged | Dependent tasks unblock automatically. If builders are idle and ready tasks exist, keep them claiming |
 | Open PRs ≥ review budget (watcher recounts via `gh`) | Tell builders to pause after their current task. Resume when PRs merge |
 | Two builders claimed the same task | Tell the loser to stop. Keep the earlier PR or branch, close the duplicate |
@@ -126,6 +130,16 @@ Everything else is **small**.
 - If a big PR merges mid-review, the reviewer stops on its own (it re-checks state); you just record it.
 - Merge gate for big PRs is the label `pre-review:ok`. Say so to the human for every big PR.
 
+## Review lessons (opt-in)
+
+Only when `LESSONS` exists or the user passed `lessons: on`; otherwise skip this section and nobody reads or writes the file. Goal: a mistake the human or a reviewer catches once is not repeated by the next builder, in this run or the next one.
+
+- **One writer: you.** Reviewers and the watcher send you `lesson: [<folder>|all|process] <rule> — <source>`; builders that learn a rule tell you too. Nobody else edits the file, so parallel agents never clobber it.
+- **When to add:** a human comment that states a rule beyond the one line it's on (layering, naming, docs, test style), and a reviewer blocker or repeated nit that would apply to other PRs. Not one-off typos.
+- **How:** one line, imperative and checkable, with its source. Merge into an existing line instead of adding a near-duplicate. Tag `[all]` when the rule isn't about one folder: a rule tagged `[frontend]` won't be read by a backend builder (observed: "tests must fail when the guard is removed" was logged as frontend-only, then broke again in a backend PR).
+- Builders cite the lessons that apply in their plan; send back a plan that ignores a matching one.
+- The file lives in `RUN` and is not pushed by agents. At the end of the run, tell the human it changed so they commit it; the next run starts from it.
+
 ## App stack
 
 For repos whose app needs Postgres (and optionally Redis) and ports. Parallel builders and reviewers each get an isolated **slot** on one shared Postgres + Redis: slot N gets `<NAME>_PORT = base + N`, dev DB `<names.dev>N` cloned from a migrated + seeded template, test DB `<names.test>N` (empty), Redis DB index N. Config: `stack.toml` at the repo root (start from `SKILL/stack/stack.example.toml`). Registry and locks: `~/.stack/<project>.*`.
@@ -139,6 +153,7 @@ For repos whose app needs Postgres (and optionally Redis) and ports. Parallel bu
 - **Never write feature code.** If you catch yourself editing, stop and make a task instead.
 - Never merge, approve, or push to `main`. The human merges.
 - Two agents never own the same folder at the same time. Give each builder exactly one folder; it is also the builder's claim filter.
+- Lessons mode: you are the only writer of `LESSONS`.
 - Shared infra (docker, compose, databases) belongs to you and the human. Agents use `$STACK lease/run/release` when the repo has `stack.toml`.
 - Keep `RUN/plan.md` current: task → owner → PR → state. It is how a resumed lead recovers (`/resume` doesn't restore in-process teammates), and the only history: completed tasks vanish from TaskList. Update it when a task completes.
 - Your Bash cwd stays at the repo root. Use absolute paths or `( cd … && … )` subshells for other folders ([Teammate cwd](#teammate-cwd)).

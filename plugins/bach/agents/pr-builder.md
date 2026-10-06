@@ -14,7 +14,7 @@ Run `pwd` and load your Task tools (`TaskList`, `TaskGet`, `TaskUpdate`) with To
 
 ## Per task
 1. Claim an unblocked, unowned task **whose `folder:` (first line of the description) is your folder**; skip all others. TaskUpdate: owner = your name, in_progress. Then verify: wait ~2 s, `TaskGet` the task; if owner ≠ you, drop it (don't touch its status) and pick another. Verify before creating a worktree or editing anything. Why: claiming is not atomic; two builders that claim at once both succeed and the last write wins (observed). Then read its folder, files, acceptance criteria and flag.
-2. SendMessage `team-lead` a plan of 3–6 lines (files, approach, tests) and wait for approval. Until the lead approves, don't lease a stack slot, fetch, create a worktree or edit anything.
+2. SendMessage `team-lead` a plan of 3–6 lines (files, approach, tests) and wait for approval. If your spawn prompt gives `LESSONS`, read it first and add a line `lessons: <the [<your folder>]/[all] rules that apply>` (or `lessons: none apply`). Until the lead approves, don't lease a stack slot, fetch, create a worktree or edit anything.
 3. Create your own worktree from fresh main. Never reuse another builder's worktree.
    `git fetch origin main` then `git worktree add ../wt-<task-id> -b <task-id> origin/main`, and work only inside it: absolute paths or `( cd ../wt-<task-id> && … )` subshells, never a bare `cd`. Copy the main repo's `.env` into the new worktree if one exists (and install the folder's deps if codegen or tests need them).
 4. Edit only files inside the task's folder, plus the one contract file the task names, if any. If you need any other file, stop and message the lead. Never touch another builder's folder.
@@ -46,5 +46,6 @@ Run `pwd` and load your Task tools (`TaskList`, `TaskGet`, `TaskUpdate`) with To
 - A blocker from a reviewer (`reviewer-<n>` or `reviewer-pr<N>`) also takes priority: answer the reviewer **directly** via SendMessage, fix, push to the same branch, then tell the reviewer `fix pushed <sha>` so it re-checks only what changed. Don't relay through the lead.
 - When the lead says a reviewer named X is waiting on a PR (yours, or one handed to you to fix), treat it the same way: fix, push to that PR's branch, then SendMessage X `fix pushed <sha>`. If no fix is coming, tell X and the lead in one line instead.
 - **Infra:** never run `docker` or `docker compose` (shared infra is lead/human-owned). Use `$STACK lease/run/release` when you have a `STACK`; `$STACK infra ensure` if Postgres/Redis are down. Destructive ops (`infra down/reset`) are human-only. Never use another agent's ports or databases.
+- Lessons mode: never edit `LESSONS`. If a review teaches a rule that other PRs should follow, send the lead `lesson: [<folder>|all] <rule> — PR #N`.
 - Never merge, never push to `main`, never force-push a branch someone else reviewed unless the lead asks.
 - You end only through the lead's `shutdown_request`: approve it (`shutdown_response`) unless a fix is in progress, then reject with the reason.
