@@ -21,10 +21,19 @@ Feature from the user: **$ARGUMENTS**
 |---|---|
 | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is `1` | Add it to `settings.json` `env` (`bootstrap.sh` does this), restart |
 | Running inside tmux (`$TMUX` set) and `teammateMode` is `tmux` | `tmux new -s work`, then `claude` |
+| Interactive terminal `claude`, not Agent SDK, `claude -p` or the VS Code extension chat (those spawn plain subagents, not teammates) | Fail: "pr-team needs an interactive terminal session". Run `claude` in a terminal |
+| Task tools present: `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`, and `TaskCreate` loads via ToolSearch (the Task tools are deferred; off by default on models newer than Opus 4.7 / Sonnet 4.6, see [Task tool availability](https://code.claude.com/docs/en/tools-reference.md#task-tool-availability)) | Fail: "Task tools missing". Restart with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1 claude`, or `claude --allowedTools TaskCreate` |
+| After the first spawn, `~/.claude/teams/*/config.json` lists the teammate | Fail: "team didn't form, teammate is a plain subagent". Stop it; no subagent fallback |
+| After every spawn, that member's `cwd` in `~/.claude/teams/<team>/config.json` equals the repo root (see [Teammate cwd](#teammate-cwd)) | `shutdown_request` the teammate, `cd <repo root>`, respawn it |
 | `gh auth status` ok, repo has a GitHub remote | `gh auth login` |
 | `git status` clean on `main` | Commit or stash first |
 
-Teammate permission prompts appear in **your** pane. Suggest the user allow `Bash(gh:*)` and `Bash(git:*)` for this project if they haven't.
+### Teammate cwd
+A tmux teammate starts in **your current Bash cwd**, and that cwd persists between your commands. A teammate started in a subfolder (e.g. `RUN`) is treated as a different project: the repo's `.claude/settings.json` is not loaded, so it has no Task tools (and likely no project hooks). So:
+- Never leave your Bash cwd anywhere but the repo root. For a command in another folder use absolute paths or a subshell: `( cd .claude/pr-team && … )`, never a bare `cd`.
+- Run `cd <repo root>` (absolute path) right before every teammate spawn.
+
+Teammate permission prompts appear in **your** pane, and teammates start in your permission mode. In auto mode the classifier treats an approval relayed by another agent as untrusted, so the human approves directly or adds allow rules. Suggest the user allow `Bash(gh:*)` and `Bash(git:*)` for this project if they haven't.
 
 ## Step 1 · Plan (plan mode, with the user)
 
@@ -53,20 +62,25 @@ Teammate permission prompts appear in **your** pane. Suggest the user allow `Bas
    - 1 `pr-reviewer` per 3–4 builders (at least 1 when builders ≥ 2).
    - 1 `pr-watcher`, always.
 7. **Review budget.** Ask the user how many open PRs they can keep up with (default 5). This is the WIP limit on open PRs, not on agents.
-8. Write `RUN/plan.md` (task table + shape + team + review budget) and present it. Exit plan mode only after the user approves.
+8. Write `RUN/plan.md` (task table + shape + team + review budget) and present it. Task table columns: `id | folder | files | blockedBy | flag | owner | PR | state`. Exit plan mode only after the user approves.
 
 ## Step 2 · Spawn
 
-1. Create one shared task per planned task (`TaskCreate`), then set `blockedBy` (`TaskUpdate addBlockedBy`). Put folder, files, acceptance criteria and flag in each description.
-2. Spawn teammates with predictable names: `builder-1..N`, `reviewer-1..M`, `pr-watcher`. Use the plugin agent types `bach:pr-builder`, `bach:pr-reviewer`, `bach:pr-watcher`.
+1. Load the Task tools with ToolSearch, then create one shared task per planned task (`TaskCreate`), then set `blockedBy` (`TaskUpdate addBlockedBy`). Description first line is `folder: <path>` (builders filter claims on it), then files, acceptance criteria and flag.
+2. Spawn teammates with predictable names: `builder-1..N`, `reviewer-1..M`, `pr-watcher`. Use the plugin agent types `bach:pr-builder`, `bach:pr-reviewer`, `bach:pr-watcher`. Run the team-config preflight check right after the first spawn.
+   - Spawn each with the Agent tool and a `name` (no `run_in_background`, no `isolation`). You are `team-lead`; teammates address you and each other by name.
+   - Right before **every** spawn, run `cd <repo root>` (absolute path). Right after it, read `~/.claude/teams/<team>/config.json` and check the new member's `cwd` is the repo root; if not, `shutdown_request` it and respawn after `cd <repo root>` ([Teammate cwd](#teammate-cwd)).
    - If the runtime refuses a plugin agent type as a teammate, spawn a general teammate and paste the body of `AGENTS/<role>.md` at the top of its prompt.
-   - Builder prompt: its name, the repo root, "claim tasks from the task list", and the folder-ownership rule.
+   - Every prompt includes the absolute repo root (teammates check `pwd` against it).
+   - Builder prompt: its name, the repo root, **its folder** (the `folder:` value it claims), "claim tasks from the task list", and the folder-ownership rule.
    - Watcher prompt: `POLL=<absolute path>`, `STATE=<absolute RUN/state.json>`, the list of builder names.
-3. Require plan approval for builders: approve a builder's plan only if its files stay inside the task's folder.
+3. Require plan approval for builders: approve a builder's plan only if its files stay inside the task's folder. Builders send the plan by SendMessage and wait for your reply. Don't use plan-mode spawns for this: the built-in teammate plan approval is granted automatically, without your review ([agent-teams](https://code.claude.com/docs/en/agent-teams.md#have-teammates-plan-before-implementing)).
 
 ## Step 3 · Run (your loop)
 
 You react to teammate messages and task changes. Don't poll.
+
+Teammates send you an `idle_notification` after each turn and stay addressable; idle doesn't mean done. The task list and `RUN/plan.md` are the source of truth.
 
 | Signal | Action |
 |---|---|
@@ -74,13 +88,16 @@ You react to teammate messages and task changes. Don't poll.
 | Builder needs a file outside its folder | Make a new task for that folder (or a contract task), add `blockedBy`, tell the builder to finish without it or wait |
 | Task completed with a PR URL | Check the rubric quickly; tell the user "PR #n ready for review: <title>" |
 | Watcher: PR merged | Dependent tasks unblock automatically. If builders are idle and ready tasks exist, keep them claiming |
-| Open PRs ≥ review budget | Tell builders to pause after their current task. Resume when PRs merge |
+| Open PRs ≥ review budget (watcher recounts via `gh`) | Tell builders to pause after their current task. Resume when PRs merge |
+| Two builders claimed the same task | Tell the loser to stop. Keep the earlier PR or branch, close the duplicate |
+| Teammate reports missing Task tools or a wrong cwd | Check its `cwd` in `~/.claude/teams/<team>/config.json`, `shutdown_request` it, `cd <repo root>`, respawn it |
 | Builder stuck 3+ attempts on the same error | Stop it, re-scope or reassign the task |
-| No tasks left and no open PRs | Ask builders, reviewers, then the watcher to shut down. Summarise PRs merged |
+| No tasks left and no open PRs | Ask builders, reviewers, then the watcher to shut down (`shutdown_request`, wait for each `shutdown_response`). Summarise PRs merged |
 
 ## Rules
 - **Never write feature code.** If you catch yourself editing, stop and make a task instead.
 - Never merge, approve, or push to `main`. The human merges.
-- Two agents never own the same folder at the same time.
-- Keep `RUN/plan.md` current: task → owner → PR → state. It is how a resumed lead recovers (`/resume` doesn't restore in-process teammates).
+- Two agents never own the same folder at the same time. Give each builder exactly one folder; it is also the builder's claim filter.
+- Keep `RUN/plan.md` current: task → owner → PR → state. It is how a resumed lead recovers (`/resume` doesn't restore in-process teammates), and the only history: completed tasks vanish from TaskList. Update it when a task completes.
+- Your Bash cwd stays at the repo root. Use absolute paths or `( cd … && … )` subshells for other folders ([Teammate cwd](#teammate-cwd)).
 - Commands you hand the user must be zsh-safe: no bare `!`, no trailing `#` comments.
