@@ -133,6 +133,13 @@ def save(path, state):
 def one_pass(args, state):
     owner, name = repo_slug(args.repo)
     prs = [int(p) for p in args.prs.split(",")] if args.prs else open_prs(args.author)
+    # A PR merged or closed between passes drops out of the open list before its
+    # final state is diffed; poll it once more so the MERGED/CLOSED event fires.
+    for key, fp in state["seen"].items():
+        if key.endswith(":state") and fp.startswith("OPEN|"):
+            n = int(key.split(":")[1])
+            if n not in prs:
+                prs.append(n)
     first = not state["seen"]
     events = []
     for n in prs:
