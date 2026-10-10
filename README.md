@@ -47,9 +47,18 @@ bootstrap.sh
 | Run a skill | `/bach:<skill>` e.g. `/bach:web-research <topic>`, or let Claude pick it by description |
 | Agent teammates | Start Claude inside tmux; each teammate opens in its own pane |
 | Ship a feature as parallel small PRs | `/bach:pr-team <feature>`: the lead plans a task graph, spawns `pr-builder`s (one folder each), a `pr-reviewer` and a `pr-watcher` pane that routes review comments back. You review and merge |
-| Update | `git -C ~/bach-workflow pull` then `claude plugin marketplace update bach-workflow` |
+| Update | `git -C ~/bach-workflow pull`, `claude plugin marketplace update bach-workflow`, `claude plugin update bach@bach-workflow`, then restart `claude` |
 | Add a skill | Create `plugins/bach/skills/<name>/SKILL.md`, bump `version` in `plugin.json`, commit, push |
 | Change HUD display | Run `/claude-hud:configure`, or edit `~/.claude/plugins/claude-hud/config.json` |
+
+## pr-team requirements
+
+- **Interactive `claude` CLI session inside tmux.** Agent SDK, `claude -p` and IDE-extension chat sessions are not supported: they don't spawn teammates, a named `Agent` call there becomes a plain subagent ([agent teams](https://code.claude.com/docs/en/agent-teams.md)).
+- **Agent teams on:** `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in `settings.json` `env` (bootstrap sets it).
+- **Task tools:** off by default on models newer than Opus 4.7 / Sonnet 4.6. Opt in with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` (in `settings.json` `env`, or `CLAUDE_CODE_ENABLE_TODO_TOOLS=1 claude`) or `claude --allowedTools TaskCreate` ([Task tool availability](https://code.claude.com/docs/en/tools-reference.md#task-tool-availability)). Putting both env vars in `~/.claude/settings.json` makes teammates get them whatever their cwd.
+- **After editing agent or skill files, update the plugin.** Installed copies are cached per version: bump `version` in `plugins/bach/.claude-plugin/plugin.json`, push, then run the Update steps above. Running teammates keep the old prompt until respawned.
+- **Known issue: teammate cwd.** tmux teammates start in the lead's *current* Bash cwd, which persists between commands. Seen on Claude Code 2.1.289: the lead ran `cd .claude/pr-team && …` and stayed there; every teammate spawned after that was treated as a separate project, didn't load the repo's `.claude/settings.json`, and had no Task tools. pr-team now `cd`s to the repo root before every spawn and checks each member's `cwd` in `~/.claude/teams/<team>/config.json`; teammates stop and report `missing Task tools / wrong cwd` instead of working around it.
+- **Known limitation: task claiming is not atomic.** Two builders claiming the same task at once both succeed (last write wins). pr-team mitigates it: each builder only claims tasks in its own folder, then re-reads the task after ~2 s and drops it if another builder owns it.
 
 ## Troubleshooting
 
@@ -58,6 +67,8 @@ bootstrap.sh
 | Statusline shows `node not found` | Set `CLAUDE_HUD_NODE` to an absolute node path, e.g. in `settings.json` `env` |
 | Statusline shows `claude-hud not installed` | `claude plugin install claude-hud@claude-hud` |
 | Teammates don't open in panes | Make sure Claude was started inside a tmux session |
+| pr-team spawns plain subagents, no `~/.claude/teams/*/config.json` | You're in an SDK, `-p` or IDE-extension session; start `claude` in a terminal |
+| Teammate says "No task tools" or reports a wrong cwd | Its `cwd` in `~/.claude/teams/<team>/config.json` isn't the repo root. Shut it down, `cd` to the repo root, respawn |
 | Restore previous settings | Copy the newest `~/.claude/settings.json.bak.*` back over `settings.json` |
 
 ## Not in this repo
