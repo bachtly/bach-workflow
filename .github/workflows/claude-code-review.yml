@@ -6,10 +6,6 @@ on:
   issue_comment:
     types: [created]
 
-concurrency:
-  group: claude-review-${{ github.event.pull_request.number || github.event.issue.number }}
-  cancel-in-progress: true
-
 jobs:
   review:
     if: >-
@@ -18,6 +14,10 @@ jobs:
        startsWith(github.event.comment.body, '@claude review') &&
        github.event.comment.author_association == 'OWNER')
     runs-on: ubuntu-latest
+    # Job-level so skipped runs (e.g. Claude's own review comment) don't cancel an active review.
+    concurrency:
+      group: claude-review-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: true
     permissions:
       contents: read
       pull-requests: write
@@ -29,6 +29,16 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'issue_comment' && format('refs/pull/{0}/head', github.event.issue.number) || '' }}
 
+      # Read the rules from the default branch, so PRs branched before they existed
+      # still get them, and a PR can't rewrite its own review rules.
+      - id: rules
+        run: |
+          {
+            echo 'text<<RULES_EOF'
+            git show "origin/${{ github.event.repository.default_branch }}:.github/claude/code-reviewer.md"
+            echo 'RULES_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -36,11 +46,15 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
 
-            Review this pull request following the instructions in
-            .github/claude/code-reviewer.md (read it first; ignore its frontmatter).
+            Review this pull request following the reviewer instructions below
+            (ignore their frontmatter).
             Get the PR with `gh pr view` and `gh pr diff`.
             You are asked to post: when done, post the report as ONE PR comment with
             `gh pr comment ${{ github.event.pull_request.number || github.event.issue.number }} --body-file <file>`.
             Never approve, request changes or merge.
+
+            <reviewer-instructions>
+            ${{ steps.rules.outputs.text }}
+            </reviewer-instructions>
           claude_args: |
             --allowedTools "Read,Grep,Glob,Write,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh issue view:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*)"
