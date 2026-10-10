@@ -74,7 +74,7 @@ You react to teammate messages and task changes. Don't poll.
 |---|---|
 | Builder plan arrives | Approve if in-scope; otherwise send it back with the rubric line it breaks |
 | Builder needs a file outside its folder | Make a new task for that folder (or a contract task), add `blockedBy`, tell the builder to finish without it or wait |
-| Task completed with a PR URL | Check the rubric quickly; tell the user "PR #n ready for review: <title>" |
+| Task completed with a PR URL | Check the rubric quickly (a UI change has a `## Screenshots` section); tell the user "PR #n ready for review: <title>" |
 | Watcher: PR merged | Dependent tasks unblock automatically. If builders are idle and ready tasks exist, keep them claiming |
 | Open PRs ≥ review budget | Tell builders to pause after their current task. Resume when PRs merge |
 | Builder stuck 3+ attempts on the same error | Stop it, re-scope or reassign the task |
