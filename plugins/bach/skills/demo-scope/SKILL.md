@@ -142,14 +142,16 @@ Start when the user says **done**. If the workflow is still running, wait for it
 3. Show the analyze issues and self-review failures. Ask which fixes to accept (multi-select) and write them to `RUN/specs/analyze.md`.
 4. **YOUR TURN**: the user reads all of `specs/spec.md`. This is the step people skip most, and fixing a spec takes about 10 minutes against days for fixing code. Then ask **Lock scope?** (Lock / Edit first). New ideas from here on go to `RUN/v2.md`.
 
-## Step 6 · Plan (agents ≈5 min)
+## Step 6 · Roadmap (agents ≈4 min)
+
+Output is a short **feature roadmap** (features, dependencies, what can run in parallel), not a build plan. Each feature is planned later with the user inside pr-team.
 
 1. Launch `plan.js` with `{run_dir, skill_dir, repo}`, where `repo` is the target repo path if the user has one.
-2. Show the rule check result and the first 5 tasks.
+2. Show the rule check result, the dependency graph and the waves table from `roadmap.md`.
 3. The final message gives:
    - the run folder
-   - the files: idea.md, worksheets/, decision.md, scope/demo.md, scope/cut.md, specs/spec.md, plan.md, tasks.md
-   - the hand-off: "In your app repo, start Claude Code in plan mode (Shift+Tab twice), point it at `specs/spec.md` and `tasks.md`, and do task 1 (the 30-minute spike) first."
+   - the files: idea.md, worksheets/, decision.md, scope/demo.md, scope/cut.md, specs/spec.md, roadmap.md
+   - the hand-off: "Run one feature at a time: `/bach:pr-team <run>/roadmap.md#F1`. Features in the same wave can run in parallel sessions. When a feature's PRs merge and you have checked it against its AC, mark it ✅ in roadmap.md and start the next ready feature."
 
 ## Failure handling
 - A workflow returns nulls or errors: read `<transcriptDir>/journal.jsonl`, fix the cause, and relaunch with `resumeFromRunId`.
