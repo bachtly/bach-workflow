@@ -16,8 +16,7 @@ If the argument has the form `<path>/roadmap.md#F<n>` (a demo-scope hand-off), t
 - `SKILL = ${CLAUDE_SKILL_DIR}`
 - `AGENTS = ${CLAUDE_PLUGIN_ROOT}/agents`
 - `POLL = SKILL/scripts/pr_poll.py`
-- `CLAIM = SKILL/scripts/claim.py`
-- `RUN = .claude/pr-team/` in the project root. Holds `plan.md`, the watcher's `state.json` and builders' `claims/`.
+- `RUN = .claude/pr-team/` in the project root. Holds `plan.md`, the watcher's `state.json` and the plugin hooks' task state.
 
 ## Preflight (stop and tell the user if any fails)
 | Check | Fix |
@@ -56,15 +55,16 @@ Teammate permission prompts appear in **your** pane. Suggest the user allow `Bas
    - 1 `pr-reviewer` per 3–4 builders (at least 1 when builders ≥ 2).
    - 1 `pr-watcher`, always.
 7. **Review budget.** Ask the user how many open PRs they can keep up with (default 5). This is the WIP limit on open PRs, not on agents.
-8. Write `RUN/plan.md` (task table + shape + team + review budget) and present it. The task table has `id | folder | blockedBy` columns, rows in priority order (critical path first), and a `Review budget: <n>` line: builders claim from it with `CLAIM`. Exit plan mode only after the user approves.
+8. Write `RUN/plan.md` (task table + shape + team + a `Review budget: <n>` line) and present it. Exit plan mode only after the user approves.
 
 ## Step 2 · Spawn
 
-1. Spawn teammates with predictable names: `builder-1..N`, `reviewer-1..M`, `pr-watcher`. Use the plugin agent types `bach:pr-builder`, `bach:pr-reviewer`, `bach:pr-watcher`.
+1. Create one shared task per planned task (`TaskCreate`), then set `blockedBy` (`TaskUpdate addBlockedBy`). Subject = task id; the description starts `folder: <path>`, then files, acceptance criteria and flag.
+2. Spawn teammates with predictable names: `builder-1..N`, `reviewer-1..M`, `pr-watcher`. Use the plugin agent types `bach:pr-builder`, `bach:pr-reviewer`, `bach:pr-watcher`.
    - If the runtime refuses a plugin agent type as a teammate, spawn a general teammate and paste the body of `AGENTS/<role>.md` at the top of its prompt.
-   - Builder prompt: its name, the repo root, `CLAIM=<absolute path>`, and the folder-ownership rule.
+   - Builder prompt: its name, the repo root, "claim tasks from the task list", and the folder-ownership rule.
    - Watcher prompt: `POLL=<absolute path>`, `STATE=<absolute RUN/state.json>`, the list of builder names.
-2. Require plan approval for builders: approve a builder's plan only if its files stay inside the task's folder.
+3. Require plan approval for builders: approve a builder's plan only if its files stay inside the task's folder.
 
 ## Step 3 · Run (your loop)
 
@@ -73,9 +73,10 @@ You react to teammate messages and task changes. Don't poll.
 | Signal | Action |
 |---|---|
 | Builder plan arrives | Approve if in-scope; otherwise send it back with the rubric line it breaks |
-| Builder needs a file outside its folder | Add a task row for that folder (or a contract task) to `RUN/plan.md` with `blockedBy`, tell the builder to finish without it or wait |
-| Builder reports a PR | Check the rubric quickly; tell the user "PR #n ready for review: <title>" |
-| Watcher: PR merged | Dependent tasks unblock. If builders are idle, tell them to claim again (`CLAIM` also holds them while open PRs ≥ review budget) |
+| Builder needs a file outside its folder | Make a new task for that folder (or a contract task), add `blockedBy`, tell the builder to finish without it or wait |
+| A task gets a PR URL | Check the rubric quickly; tell the user "PR #n ready for review: <title>" |
+| Watcher: PR merged | Mark its task completed; dependent tasks unblock. If builders are idle and ready tasks exist, keep them claiming |
+| Watcher: PR closed, not merged | Ask the user: redo (the builder opens a new PR and updates the task's PR URL) or drop (delete the task, re-plan its dependents) |
 | Builder stuck 3+ attempts on the same error | Stop it, re-scope or reassign the task |
 | No tasks left and no open PRs | Ask builders, reviewers, then the watcher to shut down. Summarise PRs merged |
 
