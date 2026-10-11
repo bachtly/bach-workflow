@@ -19,7 +19,9 @@ LEAD = "aaaaaaaa-lead-session"
 
 GH_STUB = """#!/usr/bin/env python3
 import json, os, sys
+import time
 prs = json.loads(os.environ.get("GH_PRS", "{}"))
+time.sleep(float(os.environ.get("GH_SLEEP", "0")))
 a = sys.argv[1:]
 if a[:2] == ["pr", "list"]:
     state = lambda s: s["state"] if isinstance(s, dict) else s
@@ -44,6 +46,7 @@ class Hooks(unittest.TestCase):
         os.makedirs(os.path.join(self.repo, ".claude", "pr-team"))
         os.makedirs(os.path.join(self.repo, "sub"))
         subprocess.run(["git", "init", "-q", self.repo], check=True)
+        subprocess.run(["git", "-C", self.repo, "remote", "add", "origin", "https://github.com/o/r.git"], check=True)
         self.run_dir = os.path.join(self.repo, ".claude", "pr-team")
         self.plan("run-1", 9)
         bindir = os.path.join(self.tmp.name, "bin")
@@ -74,9 +77,9 @@ class Hooks(unittest.TestCase):
             import shutil
             shutil.rmtree(d, ignore_errors=True)
 
-    def hook(self, script, event, cwd=None, prs=None):
+    def hook(self, script, event, cwd=None, prs=None, env=None):
         event = {"session_id": LEAD, "cwd": cwd or self.repo, **event}
-        env = {**self.env, "GH_PRS": json.dumps(prs or {})}
+        env = {**self.env, "GH_PRS": json.dumps(prs or {}), **(env or {})}
         out = subprocess.run([sys.executable, script], input=json.dumps(event),
                              capture_output=True, text=True, env=env)
         return out.returncode, out.stderr
@@ -156,6 +159,36 @@ class Hooks(unittest.TestCase):
             f.write("| x | y | review budget 99 |\n")
         self.create("1", "a", "a/")
         self.assertEqual(self.claim("1", "builder-1", prs={"7": "OPEN"})[0], 2)
+
+    def test_a_builder_may_update_its_own_task_without_owner(self):
+        self.create("1", "be-schema", "api/")
+        self.claimed("1", "builder-1")
+        own = {**self.mate("builder-1"), "hook_event_name": "PreToolUse", "tool_name": "TaskUpdate",
+               "tool_input": {"taskId": "1", "status": "in_progress", "description": "PR: https://github.com/o/r/pull/9"}}
+        self.assertEqual(self.hook(GUARD, own)[0], 0)
+        other = {**own, "session_id": "builder-2-session"}
+        code, err = self.hook(GUARD, other)
+        self.assertEqual(code, 2)
+        self.assertIn("already claimed by builder-1", err)
+
+    def test_a_slow_gh_blocks_with_a_message_and_does_not_hold_the_lock(self):
+        self.create("1", "be-schema", "api/")
+        code, err = self.hook(GUARD, {**self.mate("builder-1"), "hook_event_name": "PreToolUse",
+                                      "tool_name": "TaskUpdate",
+                                      "tool_input": {"taskId": "1", "status": "in_progress", "owner": "builder-1"}},
+                              env={"GH_SLEEP": "5", "PRTEAM_GH_TIMEOUT": "1"})
+        self.assertEqual(code, 2)
+        self.assertIn("gh timed out", err)
+        self.assertEqual(self.claim("1", "builder-1")[0], 0)  # lock was never held; nothing was claimed
+
+    def test_the_pr_line_must_point_at_this_repo(self):
+        self.create("1", "be-schema", "api/")
+        ev = {"hook_event_name": "PreToolUse", "tool_name": "TaskUpdate",
+              "tool_input": {"taskId": "1", "status": "completed",
+                             "description": "PR: https://github.com/someone/else/pull/42"}}
+        code, err = self.hook(GUARD, ev, prs={"42": "MERGED"})
+        self.assertEqual(code, 2)
+        self.assertIn("points at someone/else, but this run is in o/r", err)
 
     def test_status_without_owner_does_not_skip_the_claim_rules(self):
         self.create("1", "be-schema", "api/")

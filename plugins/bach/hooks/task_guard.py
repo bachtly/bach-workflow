@@ -36,6 +36,7 @@ from contextlib import contextmanager
 
 DEFAULT_BUDGET = 5
 PENDING_CLAIM_SECONDS = 60
+GH_TIMEOUT_SECONDS = 20
 PR_LINE = re.compile(r"^\s*PR:\s*https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)", re.MULTILINE)
 RUN_LINE = re.compile(r"^\s*Run:\s*(\S+)", re.MULTILINE)
 BUDGET_LINE = re.compile(r"^\s*Review budget:\s*(\d+)", re.MULTILINE)
@@ -121,24 +122,30 @@ def all_tasks(run):
     return {n[:-5]: load(run, n[:-5]) for n in os.listdir(d) if n.endswith(".json")}
 
 
-def claim_owner(run, task_id):
-    """Owner of a live claim. A claim is written before TaskUpdate runs; if the update never
-    happened (failed or denied) it expires instead of holding the task forever."""
+def read_claim(run, task_id):
+    """(owner, session id of the claimer) of a live claim, or None. A claim is written before
+    TaskUpdate runs; if the update never happened (failed or denied) it expires instead of
+    holding the task forever."""
     path = os.path.join(run, "claims", task_id)
     try:
         with open(path) as f:
-            holder = f.read().strip()
+            holder, _, session = f.read().strip().partition("\n")
         age = time.time() - os.path.getmtime(path)
     except OSError:
         return None
     if load(run, task_id).get("owner") == holder or age < PENDING_CLAIM_SECONDS:
-        return holder
+        return holder, session
     return None
 
 
-def write_claim(run, task_id, owner):
+def claim_owner(run, task_id):
+    claim = read_claim(run, task_id)
+    return claim[0] if claim else None
+
+
+def write_claim(run, task_id, owner, session):
     with open(os.path.join(run, "claims", task_id), "w") as f:
-        f.write(owner + "\n")
+        f.write(f"{owner}\n{session or ''}\n")
 
 
 def release(run, task_id):
@@ -154,10 +161,21 @@ def budget(run):
 
 
 def gh_json(*args, cwd=None):
-    out = subprocess.run(["gh", *args], capture_output=True, text=True, cwd=cwd)
+    try:
+        out = subprocess.run(["gh", *args], capture_output=True, text=True, cwd=cwd,
+                             timeout=float(os.environ.get("PRTEAM_GH_TIMEOUT", GH_TIMEOUT_SECONDS)))
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("gh timed out")
     if out.returncode != 0:
         raise RuntimeError(out.stderr.strip() or "gh failed")
     return json.loads(out.stdout)
+
+
+def origin_repo(root):
+    """owner/repo of the origin remote, or None when it can't be told."""
+    out = subprocess.run(["git", "-C", root, "remote", "get-url", "origin"], capture_output=True, text=True)
+    m = re.search(r"github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?\s*$", out.stdout.strip())
+    return m.group(1) if m else None
 
 
 def block(msg):
@@ -187,12 +205,23 @@ def on_created(run, e):
     return 0
 
 
+def is_lead(e, state):
+    return not is_teammate(e) and e.get("session_id") == state.get("lead")
+
+
 def on_claim(run, e, state):
     ti = e["tool_input"]
-    task_id, owner = str(ti["taskId"]), ti["owner"]
+    task_id, owner, session = str(ti["taskId"]), ti["owner"], e.get("session_id")
+    open_prs = None
+    if not is_lead(e, state):
+        try:  # outside the lock: a slow gh must not stall every other hook
+            open_prs = sorted(p["number"] for p in gh_json("pr", "list", "--state", "open", "--limit", "200",
+                                                           "--json", "number", cwd=repo_root(run)))
+        except RuntimeError as err:
+            return block(f"Can't check the review budget: {err}")
     with locked(run):
-        if not is_teammate(e) and e.get("session_id") == state.get("lead"):
-            write_claim(run, task_id, owner)  # the lead may (re)assign any task
+        if open_prs is None:
+            write_claim(run, task_id, owner, session)  # the lead may (re)assign any task
             return 0
         holder = claim_owner(run, task_id)
         if holder == owner:
@@ -208,26 +237,24 @@ def on_claim(run, e, state):
                     return block(f"Folder {folder} is held by {claim_owner(run, other_id)} (task {other_id}) "
                                  f"until its PR merges. Claim a task in another folder.")
         limit = budget(run)
-        try:
-            open_prs = sorted(p["number"] for p in gh_json("pr", "list", "--state", "open", "--limit", "200",
-                                                           "--json", "number", cwd=repo_root(run)))
-        except RuntimeError as err:
-            return block(f"Can't check the review budget: {err}")
         if len(open_prs) >= limit:
             nums = " ".join(f"#{n}" for n in open_prs)
             return block(f"Review budget hit: {len(open_prs)}/{limit} open PRs ({nums}). "
                          f"Wait for a merge; do not message the lead.")
-        write_claim(run, task_id, owner)
+        write_claim(run, task_id, owner, session)
     return 0
 
 
 def on_unowned_start(run, e):
-    """A teammate starting a task without `owner` would skip the claim rules."""
+    """A teammate starting a task without `owner` would skip the claim rules, unless it is the
+    teammate that claimed the task (it may update its own task, e.g. to add the PR line)."""
     task_id = str(e["tool_input"]["taskId"])
     with locked(run):
-        holder = claim_owner(run, task_id)
-    if holder:
-        return block(f"Task {task_id} is already claimed by {holder}. Claim another task.")
+        claim = read_claim(run, task_id)
+    if claim and claim[1] and claim[1] == e.get("session_id"):
+        return 0
+    if claim:
+        return block(f"Task {task_id} is already claimed by {claim[0]}. Claim another task.")
     return block(f"Start a task with owner=<your name> (TaskUpdate taskId={task_id} owner=... status=in_progress) "
                  f"so it is claimed.")
 
@@ -242,6 +269,10 @@ def on_completing(run, e):
         task["repo"], task["pr"] = prs[-1][0], int(prs[-1][1])
     if not task.get("pr"):
         return block(f"Task {task_id} has no `PR: <url>` line in its description. Add it before completing.")
+    here = origin_repo(repo_root(run))
+    if here and task["repo"].lower() != here.lower():
+        return block(f"The `PR:` line points at {task['repo']}, but this run is in {here}. "
+                     f"Put the task's own PR in its `PR:` line.")
     try:
         pr = gh_json("pr", "view", str(task["pr"]), "-R", task["repo"], "--json", "state,headRefName")
     except RuntimeError as err:
@@ -275,11 +306,11 @@ def on_updated(run, e):
     return 0
 
 
-def unexpected(e, *fields):
+def unexpected(e, top=(), tool_input=()):
     """Claude Code's hook payloads are not a stable contract: say so loudly (exit 1 shows the
     message but doesn't block) instead of silently not enforcing the rules."""
     ti = e.get("tool_input") or {}
-    missing = [f for f in fields if not (e.get(f) or ti.get(f.split(".", 1)[-1] if f.startswith("tool_input.") else f))]
+    missing = [k for k in top if not e.get(k)] + [f"tool_input.{k}" for k in tool_input if not ti.get(k)]
     if not missing:
         return None
     print(f"pr-team task hook: unexpected {e.get('hook_event_name')} payload (missing {', '.join(missing)}); "
@@ -298,13 +329,13 @@ def main():
         return 0
     event, tool, ti = e.get("hook_event_name"), e.get("tool_name"), e.get("tool_input") or {}
     if event == "TaskCreated":
-        return unexpected(e, "task_id", "session_id") or on_created(run, e)
+        return unexpected(e, top=("task_id", "session_id")) or on_created(run, e)
     if tool != "TaskUpdate":
         return 0
     state = read_state(run)
     if not active(run, state):
         return 0
-    bad = unexpected(e, "tool_input.taskId")
+    bad = unexpected(e, tool_input=("taskId",))
     if bad:
         return bad
     if event == "PostToolUse":
