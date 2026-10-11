@@ -66,7 +66,7 @@ Teammate permission prompts appear in **your** pane. Suggest the user allow `Bas
 ## Step 2 · Spawn
 
 1. Create one shared task per planned task (`TaskCreate`), then set `blockedBy` (`TaskUpdate addBlockedBy`). Put folder, files, acceptance criteria and flag in each description.
-2. Spawn teammates with predictable names: `builder-1..N`, `reviewer-1..M`, `pr-watcher`. Use the plugin agent types `bach:pr-builder`, `bach:pr-reviewer`, `bach:pr-watcher`.
+2. Spawn teammates with predictable names: `builder-1..N`, `reviewer-1..M`, `pr-watcher`. Use the plugin agent types `bach:pr-builder`, `bach:pr-reviewer`, `bach:pr-watcher`. Spawn from the project directory (a hook blocks a spawn from anywhere else).
    - If the runtime refuses a plugin agent type as a teammate, spawn a general teammate and paste the body of `AGENTS/<role>.md` at the top of its prompt.
    - Builder prompt: its name, the repo root, "claim tasks from the task list", and the folder-ownership rule.
    - Watcher prompt: `POLL=<absolute path>`, `STATE=<absolute RUN/state.json>`, the list of builder names.

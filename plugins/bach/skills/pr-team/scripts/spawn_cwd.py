@@ -25,8 +25,13 @@ def main():
     cwd = event.get("cwd") or ""
     if not tool_input.get("name") or tool_input.get("isolation") or not cwd:
         return 0
-    project = os.environ.get("CLAUDE_PROJECT_DIR") or subprocess.run(
-        ["git", "-C", cwd, "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
+    project = os.environ.get("CLAUDE_PROJECT_DIR")
+    if not project:
+        try:
+            project = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"],
+                                     capture_output=True, text=True).stdout.strip()
+        except OSError:  # no git binary: the project is unknown, let the spawn through
+            project = ""
     if not project or os.path.realpath(cwd) == os.path.realpath(project):
         return 0
     print(f"Teammates start in your current directory ({cwd}), not the project directory, so they "

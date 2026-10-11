@@ -47,6 +47,14 @@ class SpawnCwd(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn(f"cd {project}`", err)
 
+    def test_no_project_dir_and_no_git_binary_lets_the_spawn_through(self):
+        event = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": os.path.join(self.repo, "sub"),
+                 "tool_input": {"name": "b"}}
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+        env["PATH"] = os.path.join(self.repo, "no-such-dir")
+        out = subprocess.run([sys.executable, SCRIPT], input=json.dumps(event), capture_output=True, text=True, env=env)
+        self.assertEqual((out.returncode, out.stderr), (0, ""))
+
     def test_named_spawn_from_the_root_passes(self):
         self.assertEqual(self.run_hook(self.repo, {"name": "builder-1"})[0], 0)
 
