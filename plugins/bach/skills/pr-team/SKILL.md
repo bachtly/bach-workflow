@@ -2,6 +2,12 @@
 name: pr-team
 description: Lead an agent team that ships a feature as many small, self-contained PRs in parallel. Plans the task graph and folder map, fans builders out horizontally or vertically, adds a pre-reviewer and a PR watcher (own tmux pane) that routes review comments back to builders. Use when the user wants to build a feature with parallel agents, small PRs, or continuous PR delivery.
 disable-model-invocation: true
+hooks:
+  PreToolUse:
+    - matcher: "Agent"
+      hooks:
+        - type: command
+          command: "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/pr-team/scripts/spawn_cwd.py\""
 ---
 
 # PR Team
