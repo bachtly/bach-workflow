@@ -3,7 +3,7 @@
 
 The task list is the table in the lead's RUN/plan.md (columns `id`, `folder`,
 `blockedBy`; row order is priority) and a `Run: <id>` line. Claims live in
-RUN/claims/<run id>/<task id> (builder + claim time), so another run never sees
+RUN/claims/<run id>/<task id> (builder + claim time; a `/` in an id is stored as %2F), so another run never sees
 them. Task id = branch name; a task's PR is the one with that head branch created
 after the claim. A task is claimable when:
 
@@ -27,6 +27,9 @@ import subprocess
 import sys
 import time
 from datetime import datetime
+from urllib.parse import quote, unquote
+
+CLOCK_SKEW_SECONDS = 60  # the builder's clock vs GitHub's createdAt
 
 
 def run(*args, cwd=None):
@@ -68,10 +71,10 @@ def parse_plan(text):
     return (m.group(1) if m else None), tasks
 
 
-def open_prs(cwd):
-    """All PRs of the repo: [(head branch, state, number, created epoch)]."""
+def all_prs():
+    """All PRs of the repo (run from the builder's checkout): [(head branch, state, number, created epoch)]."""
     prs = json.loads(run("gh", "pr", "list", "--state", "all", "--limit", "500",
-                         "--json", "number,headRefName,state,createdAt", cwd=cwd))
+                         "--json", "number,headRefName,state,createdAt"))
     return [(p["headRefName"], p["state"], p["number"],
              datetime.fromisoformat(p["createdAt"].replace("Z", "+00:00")).timestamp()) for p in prs]
 
@@ -81,7 +84,7 @@ def task_pr(prs, task_id, claimed_at):
     rank = {"MERGED": 2, "OPEN": 1, "CLOSED": 0}
     best = None
     for head, state, number, created in prs:
-        if head == task_id and created >= claimed_at and (best is None or rank[state] > rank[best[0]]):
+        if head == task_id and created >= claimed_at - CLOCK_SKEW_SECONDS and (best is None or rank[state] > rank[best[0]]):
             best = (state, number)
     return best
 
@@ -129,17 +132,17 @@ def main():
             raise RuntimeError(f"no task table with id | folder | blockedBy columns in {plan}")
         claims_dir = os.path.join(os.path.dirname(plan), "claims", run_id)
         os.makedirs(claims_dir, exist_ok=True)
-        prs = open_prs(os.path.dirname(os.path.dirname(os.path.dirname(plan))))
+        prs = all_prs()  # read before the lock: a stale snapshot only makes the claim more conservative
         with open(os.path.join(claims_dir, ".lock"), "w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             claims = {}
             for name in os.listdir(claims_dir):
                 if not name.startswith("."):
                     with open(os.path.join(claims_dir, name)) as f:
-                        claims[name] = json.load(f)
+                        claims[unquote(name)] = json.load(f)
             kind, result = pick(a.builder, tasks, claims, prs)
             if kind == "claimed" and result["id"] not in claims:
-                with open(os.path.join(claims_dir, result["id"]), "w") as f:
+                with open(os.path.join(claims_dir, quote(result["id"], safe="")), "w") as f:
                     json.dump({"builder": a.builder, "at": time.time()}, f)
     except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as e:
         print(f"claim.py: {e}", file=sys.stderr)

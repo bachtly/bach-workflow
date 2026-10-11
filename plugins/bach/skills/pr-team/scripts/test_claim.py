@@ -68,7 +68,7 @@ class Pick(unittest.TestCase):
 
     def test_only_a_pr_created_after_the_claim_counts(self):
         claims = {"be-schema": {"builder": "b1", "at": 100}, "docs-readme": {"builder": "b2", "at": 100}}
-        old_merged = [("be-schema", "MERGED", 7, 50), ("docs-readme", "MERGED", 8, 200)]
+        old_merged = [("be-schema", "MERGED", 7, -900), ("docs-readme", "MERGED", 8, 200)]
         kind, why = self.pick("b2", claims, old_merged)
         self.assertEqual(kind, "none")
         self.assertIn("be-route: folder api/ is held", why)
@@ -81,6 +81,13 @@ class Pick(unittest.TestCase):
         kind, why = self.pick("b2", claims, closed + [("docs-readme", "OPEN", 2, 200)])
         self.assertEqual(kind, "none")
         self.assertIn("be-route: folder api/ is held", why)
+
+    def test_pr_a_little_before_the_claim_counts_for_clock_skew(self):
+        claims = {"be-schema": {"builder": "b1", "at": 1000}, "docs-readme": {"builder": "b2", "at": 1000}}
+        prs = [("be-schema", "MERGED", 1, 1000 - 30), ("docs-readme", "MERGED", 2, 1000 - 30)]
+        self.assertEqual(self.pick("b1", claims, prs)[1]["id"], "be-route")
+        stale = [("be-schema", "MERGED", 1, 1000 - 600)]
+        self.assertEqual(self.pick("b3", claims, stale)[0], "none")
 
     def test_all_claimed(self):
         claims = {t["id"]: {"builder": "b1", "at": 100} for t in self.tasks}
@@ -138,6 +145,15 @@ class Cli(unittest.TestCase):
         out = self.claim("b1")
         self.assertEqual(out.returncode, 2)
         self.assertIn("no `Run: <id>` line", out.stderr)
+
+    def test_task_ids_with_a_slash_are_stored_as_one_file(self):
+        with open(self.plan, "w") as f:
+            f.write("Run: r\n\n| id | folder | blockedBy |\n|---|---|---|\n| fix/a-b | api/ | - |\n| fix/c-d | web/ | - |\n")
+        self.assertEqual(self.claim("b1").stdout.split("\n")[0], "claimed fix/a-b")
+        self.assertEqual(self.claim("b2").stdout.split("\n")[0], "claimed fix/c-d")
+        self.assertEqual(sorted(os.listdir(os.path.join(self.run_dir, "claims", "r"))),
+                         [".lock", "fix%2Fa-b", "fix%2Fc-d"])
+        self.assertEqual(self.claim("b1").stdout.split("\n")[0], "claimed fix/a-b")  # its own task, again
 
     def test_claim_file_records_builder_and_time(self):
         self.claim("b1")
