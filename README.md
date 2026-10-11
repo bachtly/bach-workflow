@@ -19,7 +19,7 @@ claude
 |---|---|
 | 1. deps | Checks required binaries, exits if any missing |
 | 2. claude-hud | Installs `claude-hud@claude-hud`, copies `setup/claude-hud.json` to `~/.claude/plugins/claude-hud/config.json` (keeps existing), links `~/.claude/hud-statusline.sh` |
-| 3. settings | Backs up `~/.claude/settings.json`, sets only `statusLine`, `teammateMode: "tmux"`, `env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1"` and `env.CLAUDE_CODE_ENABLE_TODO_TOOLS: "1"` (Task tools, off by default on newer models) |
+| 3. settings | Backs up `~/.claude/settings.json`, sets only `statusLine`, `teammateMode: "tmux"` and `env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1"` |
 | 4. tmux | Links `~/.tmux.conf`, or appends `source-file` to an existing one |
 | 5. bach plugin | Adds this repo as marketplace `bach-workflow`, installs `bach@bach-workflow` |
 

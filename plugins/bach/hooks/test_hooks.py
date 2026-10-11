@@ -1,4 +1,4 @@
-"""Tests for the pr-team hooks. Run: python3 -m unittest plugins/bach/hooks/test_hooks.py
+"""Tests for the pr-team task hooks. Run: python3 -m unittest plugins/bach/hooks/test_hooks.py
 
 Event shapes are the ones Claude Code 2.1.296 sends (captured in an interactive
 session): teammate events carry `agent_type` (and `teammate_name` on TaskCreated),
@@ -15,7 +15,6 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GUARD = os.path.join(HERE, "task_guard.py")
-SPAWN = os.path.join(HERE, "spawn_cwd.py")
 LEAD = "aaaaaaaa-lead-session"
 
 GH_STUB = """#!/usr/bin/env python3
@@ -23,10 +22,13 @@ import json, os, sys
 prs = json.loads(os.environ.get("GH_PRS", "{}"))
 a = sys.argv[1:]
 if a[:2] == ["pr", "list"]:
-    print(json.dumps([{"number": int(n)} for n, s in prs.items() if s == "OPEN"]))
+    state = lambda s: s["state"] if isinstance(s, dict) else s
+    print(json.dumps([{"number": int(n)} for n, s in prs.items() if state(s) == "OPEN"]))
 elif a[:2] == ["pr", "view"]:
     assert "-R" in a, "gh pr view must pass -R"
-    print(json.dumps({"state": prs.get(a[2], "OPEN")}))
+    pr = prs.get(a[2], "OPEN")
+    pr = pr if isinstance(pr, dict) else {"state": pr}
+    print(json.dumps({"state": pr["state"], "headRefName": pr.get("branch", "be-schema")}))
 """
 
 
@@ -146,6 +148,53 @@ class Hooks(unittest.TestCase):
         self.assertIn("do not message the lead", err)
         self.assertEqual(self.claim("1", "builder-1", prs={"7": "OPEN", "8": "MERGED"})[0], 0)
 
+    def test_budget_reads_only_the_budget_line(self):
+        with open(os.path.join(self.run_dir, "plan.md"), "a") as f:
+            f.write("\n| be-schema | api/ | review budget 99 for later |\n")
+        self.plan("run-1", 1)
+        with open(os.path.join(self.run_dir, "plan.md"), "a") as f:
+            f.write("| x | y | review budget 99 |\n")
+        self.create("1", "a", "a/")
+        self.assertEqual(self.claim("1", "builder-1", prs={"7": "OPEN"})[0], 2)
+
+    def test_status_without_owner_does_not_skip_the_claim_rules(self):
+        self.create("1", "be-schema", "api/")
+        start = {**self.mate("builder-2"), "hook_event_name": "PreToolUse", "tool_name": "TaskUpdate",
+                 "tool_input": {"taskId": "1", "status": "in_progress"}}
+        code, err = self.hook(GUARD, start)
+        self.assertEqual(code, 2)
+        self.assertIn("owner=<your name>", err)
+        self.claimed("1", "builder-1")
+        code, err = self.hook(GUARD, start)
+        self.assertEqual(code, 2)
+        self.assertIn("already claimed by builder-1", err)
+
+    def test_completing_needs_the_tasks_own_pr(self):
+        self.create("1", "be-schema", "api/")
+        ev = {"hook_event_name": "PreToolUse", "tool_name": "TaskUpdate",
+              "tool_input": {"taskId": "1", "status": "completed"}}
+        self.update("1", description="PR: https://github.com/o/r/pull/15")
+        code, err = self.hook(GUARD, ev, prs={"15": {"state": "MERGED", "branch": "docs-readme"}})
+        self.assertEqual(code, 2)
+        self.assertIn("is branch docs-readme, but task 1 is be-schema", err)
+        self.assertEqual(self.hook(GUARD, ev, prs={"15": {"state": "MERGED", "branch": "be-schema"}})[0], 0)
+
+    def test_completing_with_the_pr_line_in_the_same_call(self):
+        self.create("1", "be-schema", "api/")
+        ev = {"hook_event_name": "PreToolUse", "tool_name": "TaskUpdate",
+              "tool_input": {"taskId": "1", "status": "completed",
+                             "description": "folder: api/\nPR: https://github.com/o/r/pull/42"}}
+        self.assertEqual(self.hook(GUARD, ev, prs={"42": "MERGED"})[0], 0)
+
+    def test_unexpected_payload_is_reported_not_ignored(self):
+        self.create("1", "be-schema", "api/")
+        code, err = self.hook(GUARD, {"hook_event_name": "PreToolUse", "tool_name": "TaskUpdate",
+                                      "tool_input": {"owner": "builder-1"}})
+        self.assertEqual(code, 1)
+        self.assertIn("unexpected PreToolUse payload (missing tool_input.taskId)", err)
+        code, err = self.hook(GUARD, {"hook_event_name": "TaskCreated", "task_subject": "x"})
+        self.assertEqual(code, 1)
+
     def test_completed_only_when_merged_and_uses_the_pr_line(self):
         self.create("1", "be-schema", "api/")
         ev = {"hook_event_name": "PreToolUse", "tool_name": "TaskUpdate",
@@ -216,26 +265,9 @@ class Hooks(unittest.TestCase):
         self.assertEqual(sorted(hooks), ["PostToolUse", "PreToolUse", "TaskCreated"])
         scripts = {c["command"].split("/hooks/")[1].rstrip('"') for groups in hooks.values()
                    for g in groups for c in g["hooks"]}
-        self.assertEqual(scripts, {"spawn_cwd.py", "task_guard.py"})
+        self.assertEqual(scripts, {"task_guard.py"})
         for s in scripts:
             self.assertTrue(os.path.exists(os.path.join(HERE, s)))
-
-    def test_spawn_cwd(self):
-        spawn = {"hook_event_name": "PreToolUse", "tool_name": "Agent",
-                 "tool_input": {"name": "builder-1", "prompt": "x"}}
-        sub = os.path.join(self.repo, "sub")
-        self.assertEqual(self.hook(SPAWN, spawn, cwd=sub)[0], 0)  # no run armed yet
-        self.create("1", "be-schema", "api/")
-        code, err = self.hook(SPAWN, spawn, cwd=sub)
-        self.assertEqual(code, 2)
-        self.assertIn(f"cd {self.repo}`", err)
-        self.assertEqual(self.hook(SPAWN, spawn)[0], 0)
-        self.assertEqual(self.hook(SPAWN, {**spawn, "tool_input": {"prompt": "x"}}, cwd=sub)[0], 0)
-        self.team(LEAD, alive=False)
-        self.assertEqual(self.hook(SPAWN, spawn, cwd=sub)[0], 0)  # lead's team gone: abandoned run
-        self.team(LEAD)
-        self.update("1", status="completed")
-        self.assertEqual(self.hook(SPAWN, spawn, cwd=sub)[0], 0)  # run finished
 
 
 if __name__ == "__main__":

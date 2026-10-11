@@ -20,7 +20,8 @@ the session ends), so an abandoned run stops gating by itself. Without a
                            a task still in_progress, and blocking it loops.)
   PostToolUse TaskUpdate   record owner, status and the `PR: <url>` line
 
-Exit 2 blocks the action and shows stderr to the agent. Teammate events carry
+Exit 2 blocks the action and shows stderr to the agent; exit 1 reports an unexpected
+payload without blocking. Teammate events carry
 `agent_type` (and `teammate_name` on TaskCreated); the lead's carry neither.
 """
 import fcntl
@@ -37,6 +38,7 @@ DEFAULT_BUDGET = 5
 PENDING_CLAIM_SECONDS = 60
 PR_LINE = re.compile(r"^\s*PR:\s*https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)", re.MULTILINE)
 RUN_LINE = re.compile(r"^\s*Run:\s*(\S+)", re.MULTILINE)
+BUDGET_LINE = re.compile(r"^\s*Review budget:\s*(\d+)", re.MULTILINE)
 
 
 def run_dir(cwd):
@@ -84,9 +86,9 @@ def read_state(run):
         return {}
 
 
-def active(run):
+def active(run, state=None):
     """The run recorded for this plan, with its lead's team still alive."""
-    state = read_state(run)
+    state = state if state is not None else read_state(run)
     return bool(state.get("id")) and state["id"] == plan_run_id(run) and team_alive(state.get("lead") or "")
 
 
@@ -147,7 +149,7 @@ def release(run, task_id):
 
 
 def budget(run):
-    m = re.search(r"review budget\D{0,20}(\d+)", read_plan(run), re.IGNORECASE)
+    m = BUDGET_LINE.search(read_plan(run))
     return int(m.group(1)) if m else DEFAULT_BUDGET
 
 
@@ -219,18 +221,36 @@ def on_claim(run, e, state):
     return 0
 
 
-def on_completing(run, e):
+def on_unowned_start(run, e):
+    """A teammate starting a task without `owner` would skip the claim rules."""
     task_id = str(e["tool_input"]["taskId"])
     with locked(run):
+        holder = claim_owner(run, task_id)
+    if holder:
+        return block(f"Task {task_id} is already claimed by {holder}. Claim another task.")
+    return block(f"Start a task with owner=<your name> (TaskUpdate taskId={task_id} owner=... status=in_progress) "
+                 f"so it is claimed.")
+
+
+def on_completing(run, e):
+    ti = e["tool_input"]
+    task_id = str(ti["taskId"])
+    with locked(run):
         task = load(run, task_id)
+    prs = PR_LINE.findall(ti.get("description") or "")
+    if prs:
+        task["repo"], task["pr"] = prs[-1][0], int(prs[-1][1])
     if not task.get("pr"):
         return block(f"Task {task_id} has no `PR: <url>` line in its description. Add it before completing.")
     try:
-        state = gh_json("pr", "view", str(task["pr"]), "-R", task["repo"], "--json", "state")["state"]
+        pr = gh_json("pr", "view", str(task["pr"]), "-R", task["repo"], "--json", "state,headRefName")
     except RuntimeError as err:
         return block(f"Can't check PR #{task['pr']}: {err}")
-    if state != "MERGED":
-        return block(f"PR #{task['pr']} is {state}. Keep task {task_id} in_progress; "
+    if task.get("subject") and pr["headRefName"] != task["subject"]:
+        return block(f"PR #{task['pr']} is branch {pr['headRefName']}, but task {task_id} is {task['subject']} "
+                     f"(subject = branch name). Put the task's own PR in its `PR:` line.")
+    if pr["state"] != "MERGED":
+        return block(f"PR #{task['pr']} is {pr['state']}. Keep task {task_id} in_progress; "
                      f"the lead marks it completed when the PR merges.")
     return 0
 
@@ -255,6 +275,19 @@ def on_updated(run, e):
     return 0
 
 
+def unexpected(e, *fields):
+    """Claude Code's hook payloads are not a stable contract: say so loudly (exit 1 shows the
+    message but doesn't block) instead of silently not enforcing the rules."""
+    ti = e.get("tool_input") or {}
+    missing = [f for f in fields if not (e.get(f) or ti.get(f.split(".", 1)[-1] if f.startswith("tool_input.") else f))]
+    if not missing:
+        return None
+    print(f"pr-team task hook: unexpected {e.get('hook_event_name')} payload (missing {', '.join(missing)}); "
+          f"the task rules are NOT enforced for this event. Claude Code may have changed its hook input.",
+          file=sys.stderr)
+    return 1
+
+
 def main():
     try:
         e = json.load(sys.stdin)
@@ -265,18 +298,25 @@ def main():
         return 0
     event, tool, ti = e.get("hook_event_name"), e.get("tool_name"), e.get("tool_input") or {}
     if event == "TaskCreated":
-        return on_created(run, e)
+        return unexpected(e, "task_id", "session_id") or on_created(run, e)
     if tool != "TaskUpdate":
         return 0
     state = read_state(run)
-    if not active(run):
+    if not active(run, state):
         return 0
+    bad = unexpected(e, "tool_input.taskId")
+    if bad:
+        return bad
     if event == "PostToolUse":
         return on_updated(run, e)
-    if event == "PreToolUse" and ti.get("status") == "completed":
+    if event != "PreToolUse":
+        return 0
+    if ti.get("status") == "completed":
         return on_completing(run, e)
-    if event == "PreToolUse" and ti.get("owner"):
+    if ti.get("owner"):
         return on_claim(run, e, state)
+    if ti.get("status") == "in_progress" and is_teammate(e):
+        return on_unowned_start(run, e)
     return 0
 
 
