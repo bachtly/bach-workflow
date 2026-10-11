@@ -12,7 +12,7 @@ import claim  # noqa: E402
 
 PLAN = """# Plan
 
-Run: run-1
+Plan: run-1
 
 | id | folder | files | blockedBy | AC |
 |---|---|---|---|---|
@@ -27,19 +27,19 @@ Review budget: 2
 
 class Pick(unittest.TestCase):
     def setUp(self):
-        self.run_id, self.tasks, self.headers = claim.parse_plan(PLAN)
+        self.plan_id, self.tasks, self.headers = claim.parse_plan(PLAN)
 
     def pick(self, builder, claims=None, prs=None):
         return claim.pick(builder, self.tasks, claims or {}, prs or [])
 
     def test_parse(self):
-        self.assertEqual(self.run_id, "run-1")
+        self.assertEqual(self.plan_id, "run-1")
         self.assertEqual([t["id"] for t in self.tasks], ["be-schema", "be-route", "fe-page", "docs-readme"])
         self.assertEqual(self.tasks[1]["blockedby"], ["be-schema"])
         self.assertEqual(self.tasks[3]["blockedby"], [])
 
     def test_no_run_line(self):
-        self.assertIsNone(claim.parse_plan(PLAN.replace("Run: run-1", ""))[0])
+        self.assertIsNone(claim.parse_plan(PLAN.replace("Plan: run-1", ""))[0])
         self.assertEqual(self.headers[:3], ["id", "folder", "files"])
 
     def test_first_ready_in_plan_order(self):
@@ -140,7 +140,7 @@ class Cli(unittest.TestCase):
         names = sorted(os.listdir(os.path.join(self.run_dir, "claims", "run-1")))
         self.assertEqual(names, [".lock", "be-schema", "docs-readme"])
 
-    def test_a_new_run_id_starts_clean(self):
+    def test_a_new_plan_id_starts_clean(self):
         self.claim("b1")
         with open(self.plan, "w") as f:
             f.write(PLAN.replace("run-1", "run-2"))
@@ -148,14 +148,14 @@ class Cli(unittest.TestCase):
 
     def test_error_without_a_run_line(self):
         with open(self.plan, "w") as f:
-            f.write(PLAN.replace("Run: run-1", ""))
+            f.write(PLAN.replace("Plan: run-1", ""))
         out = self.claim("b1")
         self.assertEqual(out.returncode, 2)
-        self.assertIn("no `Run: <id>` line", out.stderr)
+        self.assertIn("no `Plan: <id>` line", out.stderr)
 
     def test_task_ids_must_be_kebab_names(self):
         with open(self.plan, "w") as f:
-            f.write("Run: r\n\n| id | folder | blockedBy |\n|---|---|---|\n| fix/a-b | api/ | - |\n")
+            f.write("Plan: r\n\n| id | folder | blockedBy |\n|---|---|---|\n| fix/a-b | api/ | - |\n")
         out = self.claim("b1")
         self.assertEqual(out.returncode, 2)
         self.assertIn("short kebab names", out.stderr)
@@ -180,7 +180,7 @@ class Cli(unittest.TestCase):
 
     def test_error_lists_the_headers_it_found(self):
         with open(self.plan, "w") as f:
-            f.write("Run: r\n\n| id | folder | deps |\n|---|---|---|\n| a | b | c |\n")
+            f.write("Plan: r\n\n| id | folder | deps |\n|---|---|---|\n| a | b | c |\n")
         out = self.claim("b1")
         self.assertEqual(out.returncode, 2)
         self.assertIn("first table has: id, folder, deps", out.stderr)

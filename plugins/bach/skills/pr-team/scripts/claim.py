@@ -2,9 +2,9 @@
 """Claim the next pr-team task for a builder (the shared task list without the Claude Task tools).
 
 The task list is the table in the lead's RUN/plan.md (columns `id`, `folder`,
-`blockedBy` by those exact names; row order is priority) and a `Run: <id>` line.
-Claims live in RUN/claims/<run id>/<task id>, one small JSON file per claim
-({"builder", "at"}): a run never sees another run's claims, one broken file never
+`blockedBy` by those exact names; row order is priority) and a `Plan: <id>` line.
+Claims live in RUN/claims/<plan id>/<task id>, one small JSON file per claim
+({"builder", "at"}): a plan never sees another plan's claims, one broken file never
 affects the others, and the lead releases a claim by deleting its file. Task ids are
 short kebab names (they are also the branch name), so they are safe file names.
 Task id = branch name; a task's PR is the one with that head branch created
@@ -52,8 +52,8 @@ def cells(line):
 
 
 def parse_plan(text):
-    """Return (run id or None, tasks, headers of the first table). tasks: dicts keyed by the lower-cased header."""
-    m = re.search(r"^\s*Run:\s*(\S+)", text, re.MULTILINE)
+    """Return (plan id or None, tasks, headers of the first table). tasks: dicts keyed by the lower-cased header."""
+    m = re.search(r"^\s*Plan:\s*(\S+)", text, re.MULTILINE)
     lines = text.splitlines()
     tasks, first = [], []
     for i, line in enumerate(lines):
@@ -133,16 +133,16 @@ def main():
     try:
         plan = a.plan or default_plan()
         with open(plan) as f:
-            run_id, tasks, headers = parse_plan(f.read())
-        if not run_id:
-            raise RuntimeError(f"no `Run: <id>` line in {plan}; ask the lead to add one")
+            plan_id, tasks, headers = parse_plan(f.read())
+        if not plan_id:
+            raise RuntimeError(f"no `Plan: <id>` line in {plan}; ask the lead to add one")
         if not tasks:
             raise RuntimeError(f"no task table with id | folder | blockedBy columns in {plan} "
                                f"(first table has: {', '.join(headers) or 'no table'})")
         bad = [t["id"] for t in tasks if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", t["id"])]
         if bad:
             raise RuntimeError(f"task ids must be short kebab names (they are also the branch name): {', '.join(bad)}")
-        claims_dir = os.path.join(os.path.dirname(plan), "claims", re.sub(r"[^A-Za-z0-9._-]", "_", run_id))
+        claims_dir = os.path.join(os.path.dirname(plan), "claims", re.sub(r"[^A-Za-z0-9._-]", "_", plan_id))
         os.makedirs(claims_dir, exist_ok=True)
         prs = all_prs()  # read before the lock: a stale snapshot only makes the claim more conservative
         with open(os.path.join(claims_dir, ".lock"), "w") as lock:
