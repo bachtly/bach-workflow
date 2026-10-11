@@ -78,8 +78,8 @@ You react to teammate messages and task changes. Don't poll.
 | Watcher: PR merged | Dependent tasks unblock (`CLAIM` checks). If builders are idle and ready tasks exist, tell them to claim again |
 | Watcher: PR closed, not merged | Ask the user: redo (the builder opens a new PR) or drop (remove its row, release its claim, re-plan its dependents) |
 | Open PRs ≥ review budget | Tell builders to pause after their current task. Resume when PRs merge |
-| Builder stuck 3+ attempts on the same error | Stop it, re-scope or reassign the task (release its claim: delete its line in `RUN/claims/<run>.txt`) |
-| No tasks left and no open PRs | Ask builders, reviewers, then the watcher to shut down. Summarise PRs merged |
+| Builder stuck 3+ attempts on the same error | Stop it, re-scope or reassign the task (release its claim: `rm RUN/claims/<run>/<task>`) |
+| No tasks left (every builder reported `none: all tasks claimed`) and no open PRs | Ask builders, reviewers, then the watcher to shut down. Summarise PRs merged |
 
 ## Rules
 - **Never write feature code.** If you catch yourself editing, stop and make a task instead.

@@ -3,8 +3,10 @@
 
 The task list is the table in the lead's RUN/plan.md (columns `id`, `folder`,
 `blockedBy` by those exact names; row order is priority) and a `Run: <id>` line.
-Claims live in RUN/claims/<run id>.txt, one line per claim: `<task id>\t<builder>\t<epoch>`
-(a run never sees another run's file; the lead releases a claim by deleting its line).
+Claims live in RUN/claims/<run id>/<task id>, one small JSON file per claim
+({"builder", "at"}): a run never sees another run's claims, one broken file never
+affects the others, and the lead releases a claim by deleting its file. Task ids are
+short kebab names (they are also the branch name), so they are safe file names.
 Task id = branch name; a task's PR is the one with that head branch created
 after the claim. A task is claimable when:
 
@@ -137,20 +139,28 @@ def main():
         if not tasks:
             raise RuntimeError(f"no task table with id | folder | blockedBy columns in {plan} "
                                f"(first table has: {', '.join(headers) or 'no table'})")
-        claims_dir = os.path.join(os.path.dirname(plan), "claims")
+        bad = [t["id"] for t in tasks if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", t["id"])]
+        if bad:
+            raise RuntimeError(f"task ids must be short kebab names (they are also the branch name): {', '.join(bad)}")
+        claims_dir = os.path.join(os.path.dirname(plan), "claims", re.sub(r"[^A-Za-z0-9._-]", "_", run_id))
         os.makedirs(claims_dir, exist_ok=True)
         prs = all_prs()  # read before the lock: a stale snapshot only makes the claim more conservative
-        claims_file = os.path.join(claims_dir, re.sub(r"[^A-Za-z0-9._-]", "_", run_id) + ".txt")
-        with open(claims_file, "a+") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
-            f.seek(0)
+        with open(os.path.join(claims_dir, ".lock"), "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
             claims = {}
-            for line in f.read().splitlines():
-                task_id, claimer, at = line.rsplit("\t", 2)
-                claims[task_id] = {"builder": claimer, "at": float(at)}
+            for name in sorted(os.listdir(claims_dir)):
+                if name.startswith("."):
+                    continue
+                try:
+                    with open(os.path.join(claims_dir, name)) as f:
+                        c = json.load(f)
+                    claims[name] = {"builder": c["builder"], "at": float(c["at"])}
+                except (OSError, ValueError, KeyError, TypeError):
+                    print(f"claim.py: ignoring unreadable claim {name} (delete its file to release it)", file=sys.stderr)
             kind, result = pick(a.builder, tasks, claims, prs)
             if kind == "claimed" and result["id"] not in claims:
-                f.write(f"{result['id']}\t{a.builder}\t{time.time()}\n")
+                with open(os.path.join(claims_dir, result["id"]), "w") as f:
+                    json.dump({"builder": a.builder, "at": time.time()}, f)
     except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as e:
         print(f"claim.py: {e}", file=sys.stderr)
         return 2
