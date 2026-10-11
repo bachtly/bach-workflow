@@ -2,9 +2,10 @@
 """Claim the next pr-team task for a builder (the shared task list without the Claude Task tools).
 
 The task list is the table in the lead's RUN/plan.md (columns `id`, `folder`,
-`blockedBy`; row order is priority) and a `Run: <id>` line. Claims live in
-RUN/claims/<run id>/<task id> (builder + claim time; a `/` in an id is stored as %2F), so another run never sees
-them. Task id = branch name; a task's PR is the one with that head branch created
+`blockedBy` by those exact names; row order is priority) and a `Run: <id>` line.
+Claims live in RUN/claims/<run id>.txt, one line per claim: `<task id>\t<builder>\t<epoch>`
+(a run never sees another run's file; the lead releases a claim by deleting its line).
+Task id = branch name; a task's PR is the one with that head branch created
 after the claim. A task is claimable when:
 
   - nobody has claimed it,
@@ -12,7 +13,8 @@ after the claim. A task is claimable when:
   - no other claimed task in its folder is still without a MERGED PR.
 
   claim.py <builder>                  claim and print the next task
-  claim.py <builder> --plan <path>    plan.md elsewhere (default: <main checkout>/.claude/pr-team/plan.md)
+  claim.py <builder> --plan <path>    plan.md elsewhere (default: <git root>/.claude/pr-team/plan.md,
+                                      which assumes the project root is the git root)
 
 Prints `claimed <id>` and the task's row, or `none: <why>`. A builder that holds a
 task without a PR gets that task again. Exit 0, or 2 on error. The review budget
@@ -27,7 +29,6 @@ import subprocess
 import sys
 import time
 from datetime import datetime
-from urllib.parse import quote, unquote
 
 CLOCK_SKEW_SECONDS = 60  # the builder's clock vs GitHub's createdAt
 
@@ -49,14 +50,15 @@ def cells(line):
 
 
 def parse_plan(text):
-    """Return (run id or None, tasks). tasks: dicts keyed by the lower-cased table header."""
+    """Return (run id or None, tasks, headers of the first table). tasks: dicts keyed by the lower-cased header."""
     m = re.search(r"^\s*Run:\s*(\S+)", text, re.MULTILINE)
     lines = text.splitlines()
-    tasks = []
+    tasks, first = [], []
     for i, line in enumerate(lines):
         if not line.lstrip().startswith("|"):
             continue
         header = [h.lower() for h in cells(line)]
+        first = first or header
         if not {"id", "folder", "blockedby"} <= set(header):
             continue
         for row in lines[i + 2:]:
@@ -68,7 +70,7 @@ def parse_plan(text):
                                      if b and b not in {"-", "—", "none"}]
                 tasks.append(task)
         break
-    return (m.group(1) if m else None), tasks
+    return (m.group(1) if m else None), tasks, first
 
 
 def all_prs():
@@ -106,6 +108,10 @@ def pick(builder, tasks, claims, prs):
         if t["folder"] in held:
             waiting.append(f"{t['id']}: folder {t['folder']} is held until its task's PR merges")
             continue
+        unknown = [b for b in t["blockedby"] if b not in by_id]
+        if unknown:
+            waiting.append(f"{t['id']}: blockedBy unknown task {', '.join(unknown)} (not a row in the plan)")
+            continue
         pending = [b for b in t["blockedby"] if (pr_of.get(b) or ("", 0))[0] != "MERGED"]
         if pending:
             waiting.append(f"{t['id']} waits for {', '.join(pending)}")
@@ -125,25 +131,26 @@ def main():
     try:
         plan = a.plan or default_plan()
         with open(plan) as f:
-            run_id, tasks = parse_plan(f.read())
+            run_id, tasks, headers = parse_plan(f.read())
         if not run_id:
             raise RuntimeError(f"no `Run: <id>` line in {plan}; ask the lead to add one")
         if not tasks:
-            raise RuntimeError(f"no task table with id | folder | blockedBy columns in {plan}")
-        claims_dir = os.path.join(os.path.dirname(plan), "claims", run_id)
+            raise RuntimeError(f"no task table with id | folder | blockedBy columns in {plan} "
+                               f"(first table has: {', '.join(headers) or 'no table'})")
+        claims_dir = os.path.join(os.path.dirname(plan), "claims")
         os.makedirs(claims_dir, exist_ok=True)
         prs = all_prs()  # read before the lock: a stale snapshot only makes the claim more conservative
-        with open(os.path.join(claims_dir, ".lock"), "w") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        claims_file = os.path.join(claims_dir, re.sub(r"[^A-Za-z0-9._-]", "_", run_id) + ".txt")
+        with open(claims_file, "a+") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            f.seek(0)
             claims = {}
-            for name in os.listdir(claims_dir):
-                if not name.startswith("."):
-                    with open(os.path.join(claims_dir, name)) as f:
-                        claims[unquote(name)] = json.load(f)
+            for line in f.read().splitlines():
+                task_id, claimer, at = line.rsplit("\t", 2)
+                claims[task_id] = {"builder": claimer, "at": float(at)}
             kind, result = pick(a.builder, tasks, claims, prs)
             if kind == "claimed" and result["id"] not in claims:
-                with open(os.path.join(claims_dir, quote(result["id"], safe="")), "w") as f:
-                    json.dump({"builder": a.builder, "at": time.time()}, f)
+                f.write(f"{result['id']}\t{a.builder}\t{time.time()}\n")
     except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as e:
         print(f"claim.py: {e}", file=sys.stderr)
         return 2
