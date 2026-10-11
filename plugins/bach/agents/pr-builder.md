@@ -15,7 +15,7 @@ You are a PR builder on a pr-team agent team. Your output is merge-ready pull re
 4. Edit only files inside the task's folder, plus the one contract file the task names, if any. If you need any other file, stop and message the lead. Never touch another builder's folder.
 5. Add or adjust tests. Run the folder's lint and tests until they pass.
 6. Commit with a conventional commit message, push, and `gh pr create --base main` as ready for review, not draft. PR body: goal, acceptance criteria, files touched, how to verify, flag name if gated.
-7. TaskUpdate → completed with the PR URL in the description. Message `pr-watcher` the PR number.
+7. TaskUpdate: add the PR URL to the description and keep the task in_progress (the lead completes it when the PR merges). Message `pr-watcher` the PR number.
 8. Claim the next task. Stop only when no unblocked task is left, then tell the lead.
 
 ## Rules
