@@ -26,15 +26,26 @@ class SpawnCwd(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def run_hook(self, cwd, tool_input):
+    def run_hook(self, cwd, tool_input, project_dir=None):
         event = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": cwd, "tool_input": tool_input}
-        out = subprocess.run([sys.executable, SCRIPT], input=json.dumps(event), capture_output=True, text=True)
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+        if project_dir:
+            env["CLAUDE_PROJECT_DIR"] = project_dir
+        out = subprocess.run([sys.executable, SCRIPT], input=json.dumps(event), capture_output=True, text=True, env=env)
         return out.returncode, out.stderr
 
     def test_named_spawn_from_a_subfolder_is_blocked(self):
         code, err = self.run_hook(os.path.join(self.repo, "sub"), {"name": "builder-1", "prompt": "x"})
         self.assertEqual(code, 2)
         self.assertIn(f"cd {self.repo}`", err)
+
+    def test_monorepo_project_dir_below_the_git_root(self):
+        project = os.path.join(self.repo, "apps", "web")
+        os.makedirs(project)
+        self.assertEqual(self.run_hook(project, {"name": "b"}, project_dir=project)[0], 0)  # started here: fine
+        code, err = self.run_hook(self.repo, {"name": "b"}, project_dir=project)  # lead cd'd up to the git root
+        self.assertEqual(code, 2)
+        self.assertIn(f"cd {project}`", err)
 
     def test_named_spawn_from_the_root_passes(self):
         self.assertEqual(self.run_hook(self.repo, {"name": "builder-1"})[0], 0)
@@ -52,6 +63,7 @@ class SpawnCwd(unittest.TestCase):
         with open(SKILL) as f:
             head = f.read().split("---")[1]
         self.assertRegex(head, r"PreToolUse:\s*\n\s*- matcher: \"Agent\"")
+        self.assertIn('"python3 \\"${CLAUDE_PLUGIN_ROOT}/skills/pr-team/scripts/spawn_cwd.py\\""', head)
         path = re.search(r"skills/pr-team/scripts/(spawn_cwd\.py)", head).group(1)
         self.assertTrue(os.path.exists(os.path.join(HERE, path)))
 
