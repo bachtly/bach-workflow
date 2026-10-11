@@ -55,7 +55,7 @@ Teammate permission prompts appear in **your** pane. Suggest the user allow `Bas
    - 1 `pr-reviewer` per 3–4 builders (at least 1 when builders ≥ 2).
    - 1 `pr-watcher`, always.
 7. **Review budget.** Ask the user how many open PRs they can keep up with (default 5). This is the WIP limit on open PRs, not on agents.
-8. Write `RUN/plan.md` (task table + shape + team + `Run: <id>` (a fresh id, e.g. a timestamp) and `Review budget: <n>` lines) and present it. Exit plan mode only after the user approves.
+8. Write `RUN/plan.md` (task table + shape + team + `Plan: <id>` (a fresh id, e.g. a timestamp) and `Review budget: <n>` lines) and present it. Exit plan mode only after the user approves.
 
 ## Step 2 · Spawn
 
@@ -75,8 +75,8 @@ You react to teammate messages and task changes. Don't poll.
 | Builder plan arrives | Approve if in-scope; otherwise send it back with the rubric line it breaks |
 | Builder needs a file outside its folder | Make a new task for that folder (or a contract task), add `blockedBy`, tell the builder to finish without it or wait |
 | A task gets a PR URL | Check the rubric quickly; tell the user "PR #n ready for review: <title>" |
-| Watcher: PR merged | Mark its task completed; dependent tasks unblock. If builders are idle and ready tasks exist, keep them claiming |
-| Watcher: PR closed, not merged | Ask the user: redo (the builder opens a new PR and updates the task's PR URL) or drop (delete the task, re-plan its dependents) |
+| Watcher: PR merged | Mark its task completed; dependent tasks unblock. If builders are idle and ready tasks exist, tell them to claim again |
+| Watcher: PR closed, not merged | Ask the user: redo (the builder opens a new PR and updates the task's PR URL) or drop (`TaskUpdate status=deleted`, re-plan its dependents) |
 | Builder stuck 3+ attempts on the same error | Stop it, re-scope or reassign the task |
 | No tasks left and no open PRs | Ask builders, reviewers, then the watcher to shut down. Summarise PRs merged |
 

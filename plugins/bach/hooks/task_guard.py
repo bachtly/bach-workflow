@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Hooks that enforce pr-team's task rules on the Claude Code Task tools.
 
-A run is armed when the lead creates a task while RUN/plan.md has a `Run: <id>`
-line that differs from the recorded one (RUN/run: id + the lead's session id);
-that wipes the previous run's state. The run is live only while the lead's
+A plan is armed when the lead creates a task while RUN/plan.md has a `Plan: <id>`
+line that differs from the recorded one (RUN/plan-state: id + the lead's session id);
+that wipes the previous plan's state. The plan is live only while the lead's
 team still exists (~/.claude/teams/session-<lead>/config.json is removed when
-the session ends), so an abandoned run stops gating by itself. Without a
-`Run:` line, or in another session, nothing here acts.
+the session ends), so an abandoned plan stops gating by itself. Without a
+`Plan:` line, or in another session, nothing here acts.
 
-  TaskCreated              arm a run (lead only); record subject (= task id =
+  TaskCreated              arm a plan (lead only); record subject (= task id =
                            branch) and the `folder:` line
   PreToolUse  TaskUpdate   with an owner (a claim): one owner per task, one open
                            task per folder, open PRs of the repo below
@@ -20,8 +20,9 @@ the session ends), so an abandoned run stops gating by itself. Without a
                            a task still in_progress, and blocking it loops.)
   PostToolUse TaskUpdate   record owner, status and the `PR: <url>` line
 
-Exit 2 blocks the action and shows stderr to the agent; exit 1 reports an unexpected
-payload without blocking. Teammate events carry
+Exit 2 blocks the action and shows stderr to the agent. Exit 1 reports a problem
+(an unexpected payload) without blocking. A plan.md without `Plan:` is reported to the lead as
+additional context on the TaskCreate result. Teammate events carry
 `agent_type` (and `teammate_name` on TaskCreated); the lead's carry neither.
 """
 import fcntl
@@ -38,7 +39,7 @@ DEFAULT_BUDGET = 5
 PENDING_CLAIM_SECONDS = 60
 GH_TIMEOUT_SECONDS = 20
 PR_LINE = re.compile(r"^\s*PR:\s*https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)", re.MULTILINE)
-RUN_LINE = re.compile(r"^\s*Run:\s*(\S+)", re.MULTILINE)
+PLAN_LINE = re.compile(r"^\s*Plan:\s*(\S+)", re.MULTILINE)
 BUDGET_LINE = re.compile(r"^\s*Review budget:\s*(\d+)", re.MULTILINE)
 
 
@@ -60,8 +61,8 @@ def read_plan(run):
         return f.read()
 
 
-def plan_run_id(run):
-    m = RUN_LINE.search(read_plan(run))
+def plan_id(run):
+    m = PLAN_LINE.search(read_plan(run))
     return m.group(1) if m else None
 
 
@@ -81,16 +82,16 @@ def team_alive(lead):
 
 def read_state(run):
     try:
-        with open(os.path.join(run, "run")) as f:
+        with open(os.path.join(run, "plan-state")) as f:
             return json.load(f)
     except (OSError, ValueError):
         return {}
 
 
 def active(run, state=None):
-    """The run recorded for this plan, with its lead's team still alive."""
+    """The plan recorded in RUN/plan-state matches plan.md, and its lead's team is still alive."""
     state = state if state is not None else read_state(run)
-    return bool(state.get("id")) and state["id"] == plan_run_id(run) and team_alive(state.get("lead") or "")
+    return bool(state.get("id")) and state["id"] == plan_id(run) and team_alive(state.get("lead") or "")
 
 
 @contextmanager
@@ -183,8 +184,13 @@ def block(msg):
     return 2
 
 
+NO_PLAN_ID = ("pr-team task hook: plan.md has no `Plan: <id>` line, so the task rules (one owner, one folder, "
+              "review budget, complete-on-merge) are NOT enforced. Add `Plan: <fresh id>` to plan.md "
+              "(an old plan.md from an earlier plan can be deleted).")
+
+
 def on_created(run, e):
-    rid = plan_run_id(run)
+    rid = plan_id(run)
     if not rid or not e.get("session_id"):
         return 0
     with locked(run):
@@ -195,7 +201,7 @@ def on_created(run, e):
             for sub in ("tasks", "claims"):
                 shutil.rmtree(os.path.join(run, sub), ignore_errors=True)
                 os.makedirs(os.path.join(run, sub))
-            with open(os.path.join(run, "run"), "w") as f:
+            with open(os.path.join(run, "plan-state"), "w") as f:
                 json.dump({"id": rid, "lead": e["session_id"]}, f)
         elif not active(run):
             return 0
@@ -221,10 +227,13 @@ def on_claim(run, e, state):
             return block(f"Can't check the review budget: {err}")
     with locked(run):
         if open_prs is None:
-            write_claim(run, task_id, owner, session)  # the lead may (re)assign any task
+            write_claim(run, task_id, owner, "")  # the lead may (re)assign any task; the new owner adopts it
             return 0
-        holder = claim_owner(run, task_id)
+        claim = read_claim(run, task_id)
+        holder = claim[0] if claim else None
         if holder == owner:
+            if not claim[1]:
+                write_claim(run, task_id, owner, session)
             return 0
         if holder:
             return block(f"Task {task_id} is already claimed by {holder}. Claim another task.")
@@ -253,6 +262,10 @@ def on_unowned_start(run, e):
         claim = read_claim(run, task_id)
     if claim and claim[1] and claim[1] == e.get("session_id"):
         return 0
+    if claim and not claim[1]:  # reassigned by the lead: the first teammate to update it adopts the claim
+        with locked(run):
+            write_claim(run, task_id, claim[0], e.get("session_id"))
+        return 0
     if claim:
         return block(f"Task {task_id} is already claimed by {claim[0]}. Claim another task.")
     return block(f"Start a task with owner=<your name> (TaskUpdate taskId={task_id} owner=... status=in_progress) "
@@ -271,7 +284,7 @@ def on_completing(run, e):
         return block(f"Task {task_id} has no `PR: <url>` line in its description. Add it before completing.")
     here = origin_repo(repo_root(run))
     if here and task["repo"].lower() != here.lower():
-        return block(f"The `PR:` line points at {task['repo']}, but this run is in {here}. "
+        return block(f"The `PR:` line points at {task['repo']}, but this repo is {here}. "
                      f"Put the task's own PR in its `PR:` line.")
     try:
         pr = gh_json("pr", "view", str(task["pr"]), "-R", task["repo"], "--json", "state,headRefName")
@@ -328,6 +341,13 @@ def main():
     if not run:
         return 0
     event, tool, ti = e.get("hook_event_name"), e.get("tool_name"), e.get("tool_input") or {}
+    if event == "PostToolUse" and tool == "TaskCreate":
+        # exit 1 / stderr from the TaskCreated hook reaches neither the model nor the user, so the lead is
+        # told through the TaskCreate result's additionalContext instead (checked live)
+        if not plan_id(run) and not is_teammate(e):
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse",
+                                                     "additionalContext": NO_PLAN_ID}}))
+        return 0
     if event == "TaskCreated":
         return unexpected(e, top=("task_id", "session_id")) or on_created(run, e)
     if tool != "TaskUpdate":

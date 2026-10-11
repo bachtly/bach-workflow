@@ -13,7 +13,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "TaskUpdate",
+        "matcher": "TaskUpdate|TaskCreate",
         "hooks": [
           {
             "type": "command",

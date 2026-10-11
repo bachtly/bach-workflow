@@ -63,7 +63,7 @@ class Hooks(unittest.TestCase):
         self.tmp.cleanup()
 
     def plan(self, run_id, budget):
-        lines = ["# Plan", "", f"Run: {run_id}" if run_id else "", f"Review budget: {budget}"]
+        lines = ["# Plan", "", f"Plan: {run_id}" if run_id else "", f"Review budget: {budget}"]
         with open(os.path.join(self.run_dir, "plan.md"), "w") as f:
             f.write("\n".join(lines) + "\n")
 
@@ -188,7 +188,7 @@ class Hooks(unittest.TestCase):
                              "description": "PR: https://github.com/someone/else/pull/42"}}
         code, err = self.hook(GUARD, ev, prs={"42": "MERGED"})
         self.assertEqual(code, 2)
-        self.assertIn("points at someone/else, but this run is in o/r", err)
+        self.assertIn("points at someone/else, but this repo is o/r", err)
 
     def test_status_without_owner_does_not_skip_the_claim_rules(self):
         self.create("1", "be-schema", "api/")
@@ -268,15 +268,15 @@ class Hooks(unittest.TestCase):
         self.hook(GUARD, {"session_id": "bbbbbbbb-lead-session", "hook_event_name": "TaskCreated", "task_id": "1",
                           "task_subject": "fe-page", "task_description": "folder: web/"})
         self.assertFalse(os.path.exists(os.path.join(self.run_dir, "claims", "1")))
-        self.assertEqual(read_json(os.path.join(self.run_dir, "run"))["lead"], "bbbbbbbb-lead-session")
+        self.assertEqual(read_json(os.path.join(self.run_dir, "plan-state"))["lead"], "bbbbbbbb-lead-session")
 
     def test_resumed_lead_does_not_wipe_the_run(self):
         self.create("1", "be-schema", "api/")
         self.claimed("1", "builder-1")
-        self.team("cccccccc-lead-session")  # /resume: new session id, same plan.md Run id
+        self.team("cccccccc-lead-session")  # /resume: new session id, same plan.md Plan id
         self.hook(GUARD, {"session_id": "cccccccc-lead-session", "hook_event_name": "TaskCreated", "task_id": "2",
                           "task_subject": "x", "task_description": "folder: x/"})
-        self.assertEqual(read_json(os.path.join(self.run_dir, "run"))["lead"], LEAD)
+        self.assertEqual(read_json(os.path.join(self.run_dir, "plan-state"))["lead"], LEAD)
         self.assertTrue(os.path.exists(os.path.join(self.run_dir, "claims", "1")))
 
     def test_inert_when_the_lead_team_is_gone(self):
@@ -285,10 +285,54 @@ class Hooks(unittest.TestCase):
         self.team(LEAD, alive=False)
         self.assertEqual(self.claim("1", "builder-2")[0], 0)
 
+    def test_a_plan_without_a_plan_line_tells_the_lead(self):
+        self.plan(None, 9)
+        done = {"hook_event_name": "PostToolUse", "tool_name": "TaskCreate", "tool_input": {"subject": "x"},
+                "tool_response": {"task": {"id": "1"}}}
+        out = subprocess.run([sys.executable, GUARD], input=json.dumps({"session_id": LEAD, "cwd": self.repo, **done}),
+                             capture_output=True, text=True, env=self.env)
+        self.assertEqual(out.returncode, 0)
+        context = json.loads(out.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("plan.md has no `Plan: <id>` line", context)
+        self.assertIn("NOT enforced", context)
+        self.assertEqual(json.loads(out.stdout)["hookSpecificOutput"]["hookEventName"], "PostToolUse")
+        # a teammate's TaskCreate, or a plan with a Plan line, says nothing
+        mate = subprocess.run([sys.executable, GUARD], input=json.dumps(
+            {"session_id": "m", "cwd": self.repo, "agent_type": "general-purpose", **done}),
+            capture_output=True, text=True, env=self.env)
+        self.assertEqual(mate.stdout, "")
+        self.plan("p", 9)
+        ok = subprocess.run([sys.executable, GUARD], input=json.dumps({"session_id": LEAD, "cwd": self.repo, **done}),
+                            capture_output=True, text=True, env=self.env)
+        self.assertEqual(ok.stdout, "")
+
+    def test_the_new_owner_adopts_a_task_the_lead_reassigned(self):
+        self.create("1", "be-schema", "api/")
+        self.claimed("1", "builder-1")
+        self.hook(GUARD, {"hook_event_name": "PreToolUse", "tool_name": "TaskUpdate",
+                          "tool_input": {"taskId": "1", "owner": "builder-2"}})  # the lead reassigns
+        own = {**self.mate("builder-2"), "hook_event_name": "PreToolUse", "tool_name": "TaskUpdate",
+               "tool_input": {"taskId": "1", "status": "in_progress", "description": "PR: https://github.com/o/r/pull/9"}}
+        self.assertEqual(self.hook(GUARD, own)[0], 0)  # builder-2 adopts the claim
+        code, err = self.hook(GUARD, {**own, "session_id": "builder-3-session"})
+        self.assertEqual(code, 2)
+        self.assertIn("already claimed by builder-2", err)
+
+    def test_a_task_without_a_pr_can_be_deleted_and_frees_its_folder(self):
+        self.create("1", "be-schema", "api/")
+        self.create("2", "be-route", "api/")
+        self.claimed("1", "builder-1")
+        self.assertEqual(self.claim("2", "builder-2")[0], 2)  # folder held
+        gone = {"hook_event_name": "PreToolUse", "tool_name": "TaskUpdate",
+                "tool_input": {"taskId": "1", "status": "deleted"}}
+        self.assertEqual(self.hook(GUARD, gone)[0], 0)  # not gated
+        self.update("1", status="deleted")
+        self.assertEqual(self.claim("2", "builder-2")[0], 0)
+
     def test_inert_without_run_line_or_plan(self):
         self.plan(None, 9)
         self.create("1", "be-schema", "api/")
-        self.assertFalse(os.path.exists(os.path.join(self.run_dir, "run")))
+        self.assertFalse(os.path.exists(os.path.join(self.run_dir, "plan-state")))
         self.assertEqual(self.claim("1", "builder-1")[0], 0)
         os.remove(os.path.join(self.run_dir, "plan.md"))
         self.assertEqual(self.claim("1", "builder-2")[0], 0)
@@ -296,6 +340,7 @@ class Hooks(unittest.TestCase):
     def test_hooks_json_points_at_existing_scripts(self):
         hooks = read_json(os.path.join(HERE, "hooks.json"))["hooks"]
         self.assertEqual(sorted(hooks), ["PostToolUse", "PreToolUse", "TaskCreated"])
+        self.assertEqual(hooks["PostToolUse"][0]["matcher"], "TaskUpdate|TaskCreate")
         scripts = {c["command"].split("/hooks/")[1].rstrip('"') for groups in hooks.values()
                    for g in groups for c in g["hooks"]}
         self.assertEqual(scripts, {"task_guard.py"})
