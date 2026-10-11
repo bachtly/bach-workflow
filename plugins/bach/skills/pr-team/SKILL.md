@@ -55,7 +55,7 @@ Teammate permission prompts appear in **your** pane. Suggest the user allow `Bas
    - 1 `pr-reviewer` per 3–4 builders (at least 1 when builders ≥ 2).
    - 1 `pr-watcher`, always.
 7. **Review budget.** Ask the user how many open PRs they can keep up with (default 5). This is the WIP limit on open PRs, not on agents.
-8. Write `RUN/plan.md` (task table + shape + team + a `Review budget: <n>` line) and present it. Exit plan mode only after the user approves.
+8. Write `RUN/plan.md` (task table + shape + team + `Run: <id>` (any unique id) and `Review budget: <n>` lines) and present it. Exit plan mode only after the user approves.
 
 ## Step 2 · Spawn
 

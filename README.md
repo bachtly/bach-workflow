@@ -58,7 +58,6 @@ bootstrap.sh
 | Statusline shows `node not found` | Set `CLAUDE_HUD_NODE` to an absolute node path, e.g. in `settings.json` `env` |
 | Statusline shows `claude-hud not installed` | `claude plugin install claude-hud@claude-hud` |
 | Teammates don't open in panes | Make sure Claude was started inside a tmux session |
-| pr-team spawns plain subagents, not a team | Run `claude` in a terminal inside tmux. IDE chat, Agent SDK and `claude -p` sessions don't form teams |
 | Restore previous settings | Copy the newest `~/.claude/settings.json.bak.*` back over `settings.json` |
 
 ## Not in this repo
