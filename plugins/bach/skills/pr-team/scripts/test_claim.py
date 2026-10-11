@@ -140,6 +140,21 @@ class Cli(unittest.TestCase):
         names = sorted(os.listdir(os.path.join(self.run_dir, "claims", "run-1")))
         self.assertEqual(names, [".lock", "be-schema", "docs-readme"])
 
+    def test_prs_are_asked_per_task_branch_without_a_repo_wide_limit(self):
+        log = os.path.join(self.tmp.name, "gh.log")
+        stub = os.path.join(self.tmp.name, "bin", "gh")
+        with open(stub, "w") as f:
+            f.write("#!/bin/sh\necho \"$@\" >> " + log + "\n"
+                    "case \"$*\" in *'--head be-schema'*) echo '[{\"number\":7,\"headRefName\":\"be-schema\","
+                    "\"state\":\"MERGED\",\"createdAt\":\"2999-01-01T00:00:00Z\"}]';; *) echo '[]';; esac\n")
+        self.assertEqual(self.claim("b1").stdout.split("\n")[0], "claimed be-schema")  # nothing claimed yet
+        # be-schema now has a MERGED PR created after the claim: its folder is free and be-route opens
+        self.assertEqual(self.claim("b2").stdout.split("\n")[0], "claimed be-route")
+        with open(log) as f:
+            calls = f.read()
+        self.assertIn("--head be-schema", calls)
+        self.assertNotIn("--limit 500", calls)
+
     def test_a_new_plan_id_starts_clean(self):
         self.claim("b1")
         with open(self.plan, "w") as f:

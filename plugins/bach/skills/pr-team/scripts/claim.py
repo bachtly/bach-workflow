@@ -30,6 +30,7 @@ import re
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 CLOCK_SKEW_SECONDS = 60  # the builder's clock vs GitHub's createdAt
@@ -75,12 +76,17 @@ def parse_plan(text):
     return (m.group(1) if m else None), tasks, first
 
 
-def all_prs():
-    """All PRs of the repo (run from the builder's checkout): [(head branch, state, number, created epoch)]."""
-    prs = json.loads(run("gh", "pr", "list", "--state", "all", "--limit", "500",
-                         "--json", "number,headRefName,state,createdAt"))
-    return [(p["headRefName"], p["state"], p["number"],
-             datetime.fromisoformat(p["createdAt"].replace("Z", "+00:00")).timestamp()) for p in prs]
+def prs_for(task_ids):
+    """PRs by head branch, asked for the given task ids only: [(head branch, state, number, created epoch)].
+    No repo-wide list that a limit could cut off."""
+    def one(task_id):
+        rows = json.loads(run("gh", "pr", "list", "--state", "all", "--head", task_id, "--limit", "100",
+                              "--json", "number,headRefName,state,createdAt"))
+        return [(p["headRefName"], p["state"], p["number"],
+                 datetime.fromisoformat(p["createdAt"].replace("Z", "+00:00")).timestamp()) for p in rows]
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        return [pr for rows in pool.map(one, task_ids) for pr in rows]
 
 
 def task_pr(prs, task_id, claimed_at):
@@ -144,7 +150,9 @@ def main():
             raise RuntimeError(f"task ids must be short kebab names (they are also the branch name): {', '.join(bad)}")
         claims_dir = os.path.join(os.path.dirname(plan), "claims", re.sub(r"[^A-Za-z0-9._-]", "_", plan_id))
         os.makedirs(claims_dir, exist_ok=True)
-        prs = all_prs()  # read before the lock: a stale snapshot only makes the claim more conservative
+        # Only claimed tasks have a PR to look up. Read before the lock: a claim made meanwhile has no PR
+        # yet, and a stale snapshot only makes a claim more conservative.
+        prs = prs_for([n for n in os.listdir(claims_dir) if not n.startswith(".")])
         with open(os.path.join(claims_dir, ".lock"), "w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             claims = {}
