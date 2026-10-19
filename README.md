@@ -51,6 +51,21 @@ bootstrap.sh
 | Add a skill | Create `plugins/bach/skills/<name>/SKILL.md`, bump `version` in `plugin.json`, commit, push |
 | Change HUD display | Run `/claude-hud:configure`, or edit `~/.claude/plugins/claude-hud/config.json` |
 
+## pr-team and your app's dev env
+
+Parallel builders each work in their own git worktree, but they share your machine: one Postgres, one Redis, the same ports. pr-team doesn't ship infra tooling; your repo tells agents how to get an isolated env, in its CLAUDE.md:
+
+```markdown
+## Parallel agents
+1. Once per worktree: `<your command to get an env>` (e.g. a slot lease that sets ports and DB names).
+2. Tests and servers: `<your command>` (e.g. `make check-backend`, `<runner> -- npm run dev`).
+3. Never run `docker`, `docker compose`, `make up|down`. If Postgres/Redis are down: `<safe ensure command>`.
+4. Done: `<release command>`.
+Lead, before spawning: `<infra ensure / template refresh>`.
+```
+
+The lead runs the "Lead, before spawning" steps in preflight; builders and reviewers follow the rest. Without the section, agents never touch infra and avoid each other's ports, and the lead warns you if the app needs a DB. Example implementation: the slot allocator in [lean-web-stack](https://github.com/bachtly/lean-web-stack) (`scripts/stack`).
+
 ## Troubleshooting
 
 | Symptom | Fix |
