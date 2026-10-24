@@ -80,12 +80,23 @@ You react to teammate messages and task changes. Don't poll.
 |---|---|
 | Builder plan arrives | Approve if in-scope; otherwise send it back with the rubric line it breaks |
 | Builder needs a file outside its folder | Add a row for that folder (or a contract task) to `RUN/plan.md` with `blockedBy`, tell the builder to finish without it or wait |
-| Builder reports `<task> → PR #n` | Check the rubric quickly; tell the user "PR #n ready for review: <title>". Then count the open PRs with `gh` (the next row) |
+| Builder reports `<task> → PR #n` | Check the rubric quickly; tell the user "PR #n ready for review: <title>", then show the PR table (below). Then count the open PRs with `gh` (the next row) |
 | Watcher: PR merged | Dependent tasks unblock (`CLAIM` checks). If builders are idle and ready tasks exist, tell them to claim again |
 | Watcher: PR closed, not merged | Ask the user: redo (the builder opens a new PR) or drop (remove its row and re-plan its dependents; a claim on a removed row is ignored) |
 | Open PRs ≥ review budget | Tell builders to pause after their current task. Resume when PRs merge |
 | Builder stuck 3+ attempts on the same error | Stop it, re-scope or reassign the task (release its claim: `rm RUN/claims/<plan>/<task>`) |
 | No tasks left (every builder reported `none: all tasks claimed`) and no open PRs | Ask builders, reviewers, then the watcher to shut down. Summarise PRs merged |
+
+## PR table
+
+Whenever you report PRs to the user (a new PR, a merge or close, a pause, the final summary, or when asked), show every PR of the run as one table, built from `RUN/plan.md` and `gh pr list --state all`:
+
+| PR | Title | Task | Owner | Status |
+|---|---|---|---|---|
+| #12 | Add login form | T3 | builder-1 | 🟡 Ready for review |
+| #13 | Session API | T4 | builder-2 | 🔴 Changes requested |
+
+Status is one of: 🔵 Pre-review (reviewer still checking), 🟡 Ready for review, 🔴 Changes requested, ✅ Merged, ⚫ Closed. Sort open PRs first, oldest first. Link each PR number to its URL.
 
 ## Rules
 - **Never write feature code.** If you catch yourself editing, stop and make a task instead.
