@@ -23,6 +23,7 @@ If the argument has the form `<path>/roadmap.md#F<n>` (a demo-scope hand-off), t
 - `AGENTS = ${CLAUDE_PLUGIN_ROOT}/agents`
 - `POLL = SKILL/scripts/pr_poll.py`
 - `CLAIM = SKILL/scripts/claim.py`
+- `SHOTS = SKILL/references/screenshots.md`
 - `RUN = .claude/pr-team/` in the project root. Holds `plan.md`, the watcher's `state.json` and builders' `claims/`.
 
 ## Preflight (stop and tell the user if any fails)
@@ -68,7 +69,7 @@ Teammate permission prompts appear in **your** pane. Suggest the user allow `Bas
 
 1. Spawn teammates with predictable names: `builder-1..N`, `reviewer-1..M`, `pr-watcher`. Use the plugin agent types `bach:pr-builder`, `bach:pr-reviewer`, `bach:pr-watcher`. Spawn from the project directory (a hook blocks a spawn from anywhere else).
    - If the runtime refuses a plugin agent type as a teammate, spawn a general teammate and paste the body of `AGENTS/<role>.md` at the top of its prompt.
-   - Builder prompt: its name, the repo root, `CLAIM=<absolute path>`, `PLAN=<absolute RUN/plan.md>`, and the folder-ownership rule.
+   - Builder prompt: its name, the repo root, `CLAIM=<absolute path>`, `PLAN=<absolute RUN/plan.md>`, `SHOTS=<absolute path>`, and the folder-ownership rule.
    - Watcher prompt: `POLL=<absolute path>`, `STATE=<absolute RUN/state.json>`, the list of builder names, `CLAIMS=<absolute RUN/claims/<plan id>>`.
 2. Require plan approval for builders: approve a builder's plan only if its files stay inside the task's folder.
 
@@ -80,7 +81,7 @@ You react to teammate messages and task changes. Don't poll.
 |---|---|
 | Builder plan arrives | Approve if in-scope; otherwise send it back with the rubric line it breaks |
 | Builder needs a file outside its folder | Add a row for that folder (or a contract task) to `RUN/plan.md` with `blockedBy`, tell the builder to finish without it or wait |
-| Builder reports `<task> → PR #n` | Check the rubric quickly; tell the user "PR #n ready for review: <title>", then show the PR table (below). Then count the open PRs with `gh` (the next row) |
+| Builder reports `<task> → PR #n` | Check the rubric quickly (a UI change has `## Screenshots` or `visual: trivial`); tell the user "PR #n ready for review: <title>", then show the PR table (below). Then count the open PRs with `gh` (the next row) |
 | Watcher: PR merged | Dependent tasks unblock (`CLAIM` checks). If builders are idle and ready tasks exist, tell them to claim again |
 | Watcher: PR closed, not merged | Ask the user: redo (the builder opens a new PR) or drop (remove its row and re-plan its dependents; a claim on a removed row is ignored) |
 | Open PRs ≥ review budget | Tell builders to pause after their current task. Resume when PRs merge |
