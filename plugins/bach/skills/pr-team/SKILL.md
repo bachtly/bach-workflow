@@ -80,12 +80,12 @@ You react to teammate messages and task changes. Don't poll.
 |---|---|
 | Builder plan arrives | Approve if in-scope; otherwise send it back with the rubric line it breaks |
 | Builder needs a file outside its folder | Add a row for that folder (or a contract task) to `RUN/plan.md` with `blockedBy`, tell the builder to finish without it or wait |
-| Builder reports `<task> → PR #n` | Check the rubric quickly; tell the user "PR #n ready for review: <title>", then show the PR table (below). Then count the open PRs with `gh` (the next row) |
+| Builder reports `<task> → PR #n` | Check the rubric quickly; add its human steps to the `## Human TODO` section of `RUN/plan.md`; tell the user "PR #n ready for review: <title>", then show the TODO list (below). Then count the open PRs with `gh` (the next row) |
 | Watcher: PR merged | Dependent tasks unblock (`CLAIM` checks). If builders are idle and ready tasks exist, tell them to claim again |
 | Watcher: PR closed, not merged | Ask the user: redo (the builder opens a new PR) or drop (remove its row and re-plan its dependents; a claim on a removed row is ignored) |
 | Open PRs ≥ review budget | Tell builders to pause after their current task. Resume when PRs merge |
 | Builder stuck 3+ attempts on the same error | Stop it, re-scope or reassign the task (release its claim: `rm RUN/claims/<plan>/<task>`) |
-| No tasks left (every builder reported `none: all tasks claimed`) and no open PRs | Ask builders, reviewers, then the watcher to shut down. Summarise PRs merged |
+| No tasks left (every builder reported `none: all tasks claimed`) and no open PRs | Ask builders, reviewers, then the watcher to shut down. Summarise PRs merged and show the TODO list with every step still open |
 
 ## Stay responsive: orchestrate, don't execute
 
@@ -99,9 +99,24 @@ The user chats with you while the team runs. A lead busy with a long job blocks 
 
 Reply to the user within seconds: what you decided and who owns it. Relay the result when the teammate reports. If unsure whether a job is quick, it isn't: delegate.
 
+## TODO list
+
+Next steps for the user are a TODO list, not only PRs to review. Whenever you report to the user (a new PR, a merge or close, a pause, the final summary, or when asked), show:
+
+1. **Your TODO**: open human steps from `RUN/plan.md` `## Human TODO` plus "review PR #n" for each PR waiting on the user, as checkboxes grouped by when: **Before merge**, **Review**, **After merge**, **To try it**. Each item names the PR it belongs to, where to do it (link to the provider console page, or the shell), and the exact zsh-safe command in a code block. Example:
+   - **Before merge**
+     - [ ] #12 · Create a GitHub OAuth app at https://github.com/settings/developers, callback `http://localhost:3000/auth/callback`; put its id and secret in `.env` as `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`
+   - **Review**
+     - [ ] Review #12 Add login form
+   - **After merge**
+     - [ ] #13 · Run the migration: `pnpm db:migrate`
+2. **The PR table** below.
+
+Tick a step in `RUN/plan.md` when the user says it's done or the watcher sees its PR merged (for review items). Drop steps of a PR that's closed and dropped.
+
 ## PR table
 
-Whenever you report PRs to the user (a new PR, a merge or close, a pause, the final summary, or when asked), show every PR of the run as one table, built from `RUN/plan.md` and `gh pr list --state all`:
+Show every PR of the run as one table, built from `RUN/plan.md` and `gh pr list --state all`:
 
 | PR | Title | Task | Owner | Status |
 |---|---|---|---|---|
@@ -115,5 +130,5 @@ Status is one of: 🔵 Pre-review (reviewer still checking), 🟡 Ready for revi
 - **Never block on heavy work.** Anything longer than seconds goes to a teammate (see Stay responsive).
 - Never merge, approve, or push to `main`. The human merges.
 - Two agents never own the same folder at the same time.
-- Keep `RUN/plan.md` current: task → owner → PR → state. It is how a resumed lead recovers (`/resume` doesn't restore in-process teammates).
+- Keep `RUN/plan.md` current: task → owner → PR → state, and the `## Human TODO` checklist. It is how a resumed lead recovers (`/resume` doesn't restore in-process teammates).
 - Commands you hand the user must be zsh-safe: no bare `!`, no trailing `#` comments.
