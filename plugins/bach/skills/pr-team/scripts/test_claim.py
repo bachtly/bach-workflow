@@ -176,6 +176,28 @@ class Cli(unittest.TestCase):
         self.assertIn("short kebab names", out.stderr)
         self.assertIn("fix/a-b", out.stderr)
 
+    def test_task_ids_reject_dots_and_capitals(self):
+        with open(self.plan, "w") as f:
+            f.write("Plan: r\n\n| id | folder | blockedBy |\n|---|---|---|\n| a..b | api/ | - |\n| Fix-A | web/ | - |\n")
+        out = self.claim("b1")
+        self.assertEqual(out.returncode, 2)
+        self.assertIn("a..b, Fix-A", out.stderr)
+
+    def test_plan_id_must_be_a_safe_directory_name(self):
+        with open(self.plan, "w") as f:
+            f.write(PLAN.replace("Plan: run-1", "Plan: 2026-10-11T10:00:00+02:00"))
+        out = self.claim("b1")
+        self.assertEqual(out.returncode, 2)
+        self.assertIn("plan id must use", out.stderr)
+
+    def test_a_claim_on_a_dropped_row_is_ignored(self):
+        self.assertEqual(self.claim("b1").stdout.split("\n")[0], "claimed be-schema")
+        with open(self.plan) as f:
+            text = f.read()
+        with open(self.plan, "w") as f:
+            f.write("\n".join(l for l in text.splitlines() if not l.startswith("| be-schema")) + "\n")
+        self.assertNotEqual(self.claim("b1").stdout.split("\n")[0], "claimed be-schema")
+
     def test_the_lead_releases_a_claim_by_deleting_its_file(self):
         self.claim("b1")
         os.remove(os.path.join(self.run_dir, "claims", "run-1", "be-schema"))

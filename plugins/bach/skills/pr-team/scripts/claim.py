@@ -7,6 +7,7 @@ Claims live in RUN/claims/<plan id>/<task id>, one small JSON file per claim
 ({"builder", "at"}): a plan never sees another plan's claims, one broken file never
 affects the others, and the lead releases a claim by deleting its file. Task ids are
 short kebab names (they are also the branch name), so they are safe file names.
+The plan id names the claims directory, so it stays the same when the lead re-plans.
 Task id = branch name; a task's PR is the one with that head branch created
 after the claim. A task is claimable when:
 
@@ -145,10 +146,12 @@ def main():
         if not tasks:
             raise RuntimeError(f"no task table with id | folder | blockedBy columns in {plan} "
                                f"(first table has: {', '.join(headers) or 'no table'})")
-        bad = [t["id"] for t in tasks if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", t["id"])]
+        bad = [t["id"] for t in tasks if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", t["id"])]
         if bad:
-            raise RuntimeError(f"task ids must be short kebab names (they are also the branch name): {', '.join(bad)}")
-        claims_dir = os.path.join(os.path.dirname(plan), "claims", re.sub(r"[^A-Za-z0-9._-]", "_", plan_id))
+            raise RuntimeError(f"task ids must be short kebab names, a-z 0-9 and - (they are also the branch name): {', '.join(bad)}")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", plan_id):
+            raise RuntimeError(f"plan id must use letters, digits, ., _ and - (it names the claims directory): {plan_id}")
+        claims_dir = os.path.join(os.path.dirname(plan), "claims", plan_id)
         os.makedirs(claims_dir, exist_ok=True)
         # Only claimed tasks have a PR to look up. Read before the lock: a claim made meanwhile has no PR
         # yet, and a stale snapshot only makes a claim more conservative.
