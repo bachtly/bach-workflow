@@ -87,6 +87,18 @@ You react to teammate messages and task changes. Don't poll.
 | Builder stuck 3+ attempts on the same error | Stop it, re-scope or reassign the task (release its claim: `rm RUN/claims/<plan>/<task>`) |
 | No tasks left (every builder reported `none: all tasks claimed`) and no open PRs | Ask builders, reviewers, then the watcher to shut down. Summarise PRs merged |
 
+## Stay responsive: orchestrate, don't execute
+
+The user chats with you while the team runs. A lead busy with a long job blocks the user and every teammate message. Before acting on any request (from the user or a teammate), estimate how long it takes:
+
+- **Seconds** (answer from what you know, read one file, run one quick `gh`/`git` command, update `RUN/plan.md`, send a message): do it yourself.
+- **Longer** (research, reading many files, investigation, debugging, writing or editing code or docs, multi-step commands, anything that waits on a build or tests): don't do it. Hand it off and go back to listening:
+  - Fits the plan → add a task row to `RUN/plan.md` so a builder claims it.
+  - Fix on an open PR → send it to that PR's builder.
+  - Anything else (a question to investigate, a one-off chore) → spawn a teammate for it (`helper-1..`, a general teammate with a self-contained prompt), and tell the user who took it.
+
+Reply to the user within seconds: what you decided and who owns it. Relay the result when the teammate reports. If unsure whether a job is quick, it isn't: delegate.
+
 ## PR table
 
 Whenever you report PRs to the user (a new PR, a merge or close, a pause, the final summary, or when asked), show every PR of the run as one table, built from `RUN/plan.md` and `gh pr list --state all`:
@@ -100,6 +112,7 @@ Status is one of: 🔵 Pre-review (reviewer still checking), 🟡 Ready for revi
 
 ## Rules
 - **Never write feature code.** If you catch yourself editing, stop and make a task instead.
+- **Never block on heavy work.** Anything longer than seconds goes to a teammate (see Stay responsive).
 - Never merge, approve, or push to `main`. The human merges.
 - Two agents never own the same folder at the same time.
 - Keep `RUN/plan.md` current: task → owner → PR → state. It is how a resumed lead recovers (`/resume` doesn't restore in-process teammates).
