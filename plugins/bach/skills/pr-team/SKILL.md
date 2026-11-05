@@ -64,13 +64,14 @@ Teammate permission prompts appear in **your** pane. Suggest the user allow `Bas
    - **Opt-in `review: on-demand`** (only if the user asks for it, or passes `review: on-demand` in the args or plan.md): no standing reviewer; reviewers are spawned per big PR in Step 4 (cap `max_reviewers`, default 3).
    - 1 `pr-watcher`, always.
 7. **Review budget.** Ask the user how many open PRs they can keep up with (default 5). This is the WIP limit on open PRs, not on agents.
-8. Write `RUN/plan.md` (task table + shape + team + review budget + review mode) and present it. It has a `Plan: <id>` line (letters, digits, `.`, `_`, `-`, e.g. `20261024-1000`; new for a new run, unchanged on re-plan, since claims are kept per plan id), and a task table with `id | folder | files | blockedBy | acceptance criteria | flag` columns (these exact names) in priority order (critical path first); in on-demand mode it also has `size | reviewer` columns, plus a `max_reviewers` line. Task ids are short kebab names (`a-z`, `0-9`, `-`): each is also the task's branch name. Builders claim from it with `CLAIM`. Exit plan mode only after the user approves.
+8. Write `RUN/plan.md` (task table + shape + team + review budget + review mode) and present it. It has a `Plan: <id>` line (letters, digits, `.`, `_`, `-`, e.g. `20261024-1000`; new for a new run, unchanged on re-plan, since claims are kept per plan id), and a task table with `id | folder | files | blockedBy | acceptance criteria | flag` columns (these exact names) in priority order (critical path first); in on-demand mode it also has `size | reviewer` columns, plus a `max_reviewers` line. Task ids are short kebab names (`a-z`, `0-9`, `-`): each is also the task's branch name. Builders claim from it with `CLAIM`. It also has an empty `## Lessons` section (see [Review lessons](#review-lessons)). Exit plan mode only after the user approves.
 
 ## Step 2 · Spawn
 
 1. Spawn teammates with predictable names: `builder-1..N`, `reviewer-1..M`, `pr-watcher`. Use the plugin agent types `bach:pr-builder`, `bach:pr-reviewer`, `bach:pr-watcher`. In on-demand mode skip `reviewer-1..M`. Spawn from the project directory (a hook blocks a spawn from anywhere else).
    - If the runtime refuses a plugin agent type as a teammate, spawn a general teammate and paste the body of `AGENTS/<role>.md` at the top of its prompt.
    - Builder prompt: its name, the repo root, `CLAIM=<absolute path>`, `PLAN=<absolute RUN/plan.md>`, `SHOTS=<absolute path>`, the folder-ownership rule, and the review mode.
+   - Reviewer prompt: its name, the repo root, `PLAN=<absolute RUN/plan.md>`.
    - Watcher prompt: `POLL=<absolute path>`, `STATE=<absolute RUN/state.json>`, the list of builder names, `CLAIMS=<absolute RUN/claims/<plan id>>`, and the review mode.
 2. Require plan approval for builders: approve a builder's plan only if its files stay inside the task's folder.
 
@@ -85,6 +86,7 @@ You react to teammate messages and task changes. Don't poll.
 | Builder reports `<task> → PR #n` | Check the rubric quickly (a UI change has `## Screenshots` or `visual: trivial`); add its human steps to the `## Human TODO` section of `RUN/plan.md`; tell the user "PR #n ready for review: <title>", then show the TODO list (below). Then count the open PRs with `gh` (the next row). In on-demand mode, classify it first (Step 4) and say whether pre-review runs |
 | Reviewer verdict `ok` (on-demand mode) | Record in plan.md, shut the reviewer down. Tell the human "PR #N pre-review ok, ready to merge" |
 | Reviewer says `blocked` (on-demand mode) | Keep the reviewer (no `shutdown_request`). Route the fix to the owning builder and give it the reviewer's name; wait for the re-check. Tell the human only if it needs a decision |
+| `lesson: …` from a reviewer, builder or the watcher | Filter and merge it into `## Lessons` in `RUN/plan.md` (see Review lessons) |
 | Watcher: human-comment fix round started / ended | Record in plan.md. Don't route fixes yourself |
 | Watcher: PR merged | Dependent tasks unblock (`CLAIM` checks). If builders are idle and ready tasks exist, tell them to claim again |
 | Watcher: PR closed, not merged | Ask the user: redo (the builder opens a new PR) or drop (remove its row and re-plan its dependents; a claim on a removed row is ignored) |
@@ -130,6 +132,15 @@ Show every PR of the run as one table, built from `RUN/plan.md` and `gh pr list 
 
 Status is one of: 🔵 Pre-review (reviewer still checking), 🟡 Ready for review, 🔴 Changes requested, ✅ Merged, ⚫ Closed. Sort open PRs first, oldest first. Link each PR number to its URL.
 
+## Review lessons
+
+Goal: a mistake caught once in review is not repeated by the next builder. Teammates send you `lesson: [<folder>|all] <rule> — PR #n (<who>)`. You are the only writer of `## Lessons` in `RUN/plan.md`; builders read it before every plan, reviewers check against it.
+
+- **Be picky.** Add a lesson only if it is a rule for future PRs (not a fix for this one), it is checkable on a diff, it came from a human comment or a reviewer blocker, and the repo's `CLAUDE.md`, a linter or a test doesn't already enforce it. Drop everything else, typos and one-off nits included.
+- **Merge every time.** On each add, re-read the section: fold the new lesson into a similar line, rewrite overlapping lines as one more general rule, and remove lines a `CLAUDE.md` now covers. Keep at most 10 lines; over that, merge harder or drop the least useful. Use `[all]` unless the rule is truly about one folder.
+- One imperative line each, ending with its sources: `- [all] A test for a fix must fail when the fix is reverted — PR #8, #18`.
+- When every other task is claimed and `## Lessons` has lines not yet in the repo's `CLAUDE.md` files, add a last task row `lessons-docs`: files = root `CLAUDE.md` (for `[all]`) and `<folder>/CLAUDE.md` (for folder lessons). Acceptance: each lesson merged into the existing rules there (no near-duplicates, the same pickiness bar), one line each. The human reviews it like any PR.
+
 ## Step 4 · Review on demand (opt-in, `review: on-demand` only)
 
 Skip this step in the default mode. A builder reports each PR to you right after `gh pr create`, with size hints. Classify it at once (read `gh pr diff <n> --name-only` and `gh pr view <n> --json additions,deletions` if the hints are thin).
@@ -145,7 +156,7 @@ Everything else is **small**.
 | Size | Action |
 |---|---|
 | small | Tell the human: "PR #N ready, no pre-review needed (small: <reason>)". |
-| big | Spawn ONE teammate `reviewer-pr<N>` (`bach:pr-reviewer`, Agent tool with `name`) for that PR only. Prompt: `review: on-demand`, PR number, owning builder name, repo root. Tell the human: "PR #N ready, pre-review running (big: <reason>). Wait for label `pre-review:ok` before merging." |
+| big | Spawn ONE teammate `reviewer-pr<N>` (`bach:pr-reviewer`, Agent tool with `name`) for that PR only. Prompt: `review: on-demand`, PR number, owning builder name, repo root, `PLAN=<absolute RUN/plan.md>`. Tell the human: "PR #N ready, pre-review running (big: <reason>). Wait for label `pre-review:ok` before merging." |
 
 - Several big PRs → several reviewers in parallel, at most `max_reviewers` alive. Over the cap, queue the PR in plan.md and spawn when a reviewer finishes.
 - A reviewer that sends an `ok` verdict is done: send it a `shutdown_request`. Update `size` and `reviewer` in plan.md.
