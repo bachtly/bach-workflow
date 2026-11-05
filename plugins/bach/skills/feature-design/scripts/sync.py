@@ -177,6 +177,12 @@ def main():
             for k in ("owner", "pr", "reason"):
                 if getattr(args, k):
                     st[k] = getattr(args, k)
+            if args.owner and args.name in PHASE2:
+                # pr-watcher finds a PR's owner in CLAIMS/<branch> ({"builder", "at"}, pr-team's claim format)
+                claims = os.path.join(os.path.dirname(path), "claims")
+                os.makedirs(claims, exist_ok=True)
+                with open(os.path.join(claims, f"design-{state['slug']}-{args.name}"), "w", encoding="utf-8") as f:
+                    json.dump({"builder": args.owner, "at": now()}, f)
             save(path, state)
             return show(state)
 

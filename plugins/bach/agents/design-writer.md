@@ -11,7 +11,7 @@ You write one stage of a feature design, in parallel with the writers of the oth
 Your spawn prompt names your `STAGE` and the paths. First read the team protocol (`SKILL/references/team-protocol.md`) and your stage template (`SKILL/references/stage-<n>-<stage>.md`). They hold the rules; follow them exactly.
 
 ## Start
-1. `git fetch origin main`, then `git worktree add ../wt-design-<STAGE> -b design/<SLUG>/<STAGE> origin/main`. Work only inside it. If you were respawned and the branch already exists, reuse its worktree (or add one for the existing branch) and continue from its PR and `sync.py pending`.
+1. `git fetch origin main`, then `git worktree add ../wt-design-<STAGE> -b design-<SLUG>-<STAGE> origin/main`. Work only inside it. If you were respawned and the branch already exists, reuse its worktree (or add one for the existing branch) and continue from its PR and `sync.py pending`.
 2. Read the foundation docs, the repo's canonical docs and the code the brief points to.
 3. Write a first full draft quickly, so peers have something to read. Unknown facts owned by others get `ASSUMES(...)` markers. Commit, push, and open a **draft** PR (`gh pr create --draft --base main`). The PR body holds the goal, the UC/AC ids covered and the ADRs proposed. Then `sync.py stage <STAGE> drafting --owner <your name> --pr <n>`.
 4. Message `design-critic` to review your PR, and the lead with the PR number.

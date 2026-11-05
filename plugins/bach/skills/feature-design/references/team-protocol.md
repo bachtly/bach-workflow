@@ -5,14 +5,14 @@ Read by every phase-2 teammate. The spawn prompt gives the values: `RUN` (design
 ## Branches and docs
 | Stage | Doc | Branch | Writer |
 |---|---|---|---|
-| data-model | `RUN/03-data-model.md` | `design/SLUG/data-model` | `data-writer` |
-| api | `RUN/04-api.md` | `design/SLUG/api` | `api-writer` |
-| ui | `RUN/05-ui.md` | `design/SLUG/ui` | `ui-writer` |
-| backend | `RUN/06-backend.md` | `design/SLUG/backend` | `backend-writer` |
+| data-model | `RUN/03-data-model.md` | `design-SLUG-data-model` | `data-writer` |
+| api | `RUN/04-api.md` | `design-SLUG-api` | `api-writer` |
+| ui | `RUN/05-ui.md` | `design-SLUG-ui` | `ui-writer` |
+| backend | `RUN/06-backend.md` | `design-SLUG-backend` | `backend-writer` |
 
 - Every branch starts from `main`, which already holds the merged foundation (`00-brief.md`, `01-research.md`, `02-requirements.md`, ADRs). The foundation is the source of truth for goals, glossary and UC/AC/NFR ids.
 - A writer edits only its own doc and ADRs it reserved. Nobody else pushes to its branch.
-- Read a peer's **current** doc from its branch, not from main: `git fetch -q origin && git show origin/design/SLUG/<stage>:RUN/<doc>`. If the branch doesn't exist yet, use the foundation and mark what you assumed.
+- Read a peer's **current** doc from its branch, not from main: `git fetch -q origin && git show origin/design-SLUG-<stage>:RUN/<doc>`. If the branch doesn't exist yet, use the foundation and mark what you assumed.
 
 ## Who owns which fact
 A fact's owner decides it; everyone else follows the owner's branch.

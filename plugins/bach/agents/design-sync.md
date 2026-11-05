@@ -14,7 +14,7 @@ Your spawn prompt gives the paths. First read the team protocol (`SKILL/referenc
 Run a check when a writer messages you (push, CHG id, ready), and when the lead asks. Don't poll on your own.
 
 ## Check
-1. `git fetch -q origin`. Read every phase-2 doc from its branch (`git show origin/design/<SLUG>/<stage>:<RUN>/<doc>`), plus the foundation from `origin/main`.
+1. `git fetch -q origin`. Read every phase-2 doc from its branch (`git show origin/design-<SLUG>-<stage>:<RUN>/<doc>`), plus the foundation from `origin/main`.
 2. Find:
    - **contradictions**: the same entity, field, operation, error, state or behaviour described differently in two docs. The fact's owner (protocol table) is right; the other doc must follow.
    - **missed events**: an owner's doc changed a fact that another doc still uses the old way, and no CHG covers it.

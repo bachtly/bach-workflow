@@ -3,6 +3,12 @@ name: feature-design
 description: Design a medium or large feature together with the user before any code is written, as reviewed technical design docs delivered through PRs. Phase 1, led with the user, settles the brief, research (our codebase plus industry solutions) and requirements in one foundation PR. Phase 2 runs one teammate per design area - data model, API, UI, backend (concurrency, modules, infra, rollout) - each on its own PR in parallel, kept consistent by change events and a sync teammate while the user reviews each PR. Ends with a design summary, ADRs and a pr-team roadmap. Use when the user wants to design, spec or architect a feature, write a design doc or RFC, or plan a feature before implementing it.
 argument-hint: <feature idea | design slug to resume>
 disable-model-invocation: true
+hooks:
+  PreToolUse:
+    - matcher: "Agent"
+      hooks:
+        - type: command
+          command: "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/pr-team/scripts/spawn_cwd.py\""
 ---
 
 # Feature Design
@@ -50,7 +56,7 @@ If `$ARGUMENTS` names an existing slug, run `SYNCPY` and continue at its `NEXT` 
 
 ## Phase 1 · Foundation (lead + user, gated)
 
-Work on branch `design/<slug>/foundation`. Commit each doc when its gate passes.
+Work on branch `design-<slug>-foundation`. Commit each doc when its gate passes.
 
 ### Step 1 · Brief (≈5 min)
 1. Scan the repo for the area the feature touches (Glob/Grep, or an `Explore` agent at medium breadth).
@@ -85,11 +91,11 @@ The rules teammates follow are in `references/team-protocol.md`: branches, fact 
 
 ### Step 5 · Spawn
 1. Run the preflight.
-2. Spawn teammates with the plugin agent types (if the runtime refuses a plugin type as a teammate, spawn a general teammate and paste the body of `AGENTS/<role>.md` at the top of its prompt):
+2. Spawn from the repo root (a hook blocks a spawn from anywhere else). Use the plugin agent types (if the runtime refuses a plugin type as a teammate, spawn a general teammate and paste the body of `AGENTS/<role>.md` at the top of its prompt):
    - one `bach:design-writer` per phase-2 stage that isn't skipped, named `data-writer`, `api-writer`, `ui-writer`, `backend-writer`
    - `design-critic` (`bach:design-critic`), `design-sync` (`bach:design-sync`), `pr-watcher` (`bach:pr-watcher`)
 3. Every spawn prompt gives absolute paths: `SKILL`, `RUN`, `SYNC`, `SYNCPY` (the script path), `SLUG`, the repo root, and the protocol's stage ↔ writer ↔ branch table, minus skipped stages. A writer's prompt also gives its `STAGE`.
-4. The watcher's prompt gives `POLL`, `STATE=<repo root>/.claude/feature-design/<slug>/watch.json`, and says: "the builders are the design writers; route a PR's comments to the writer of its branch; a comment that changes a fact another doc uses must make the writer emit a change event."
+4. The watcher's prompt gives `POLL`, `STATE=<repo root>/.claude/feature-design/<slug>/watch.json`, `CLAIMS=<repo root>/.claude/feature-design/<slug>/claims` (sync.py writes a claim there when a writer registers with `--owner`), review mode "standing (design-critic)", and says: "the builders are the design writers; a comment that changes a fact another doc uses must make the writer emit a change event; `lesson:` messages go to the lead, who adds them to the design's open questions."
 5. Tell the user:
 
    ```
@@ -105,7 +111,7 @@ The rules teammates follow are in `references/team-protocol.md`: branches, fact 
 |---|---|
 | Writer: PR opened or ready | `SYNCPY` and tell the user "PR #n (<stage>) ready for review" |
 | A CHG with an `objects` ack, or design-sync reports writers disagreeing | Ask the user in one `AskUserQuestion` (both positions, with the owner's first). Record the answer as an ADR and `SYNCPY resolve <id> --decision "..."`. Message both writers |
-| Change request to a foundation fact | Ask the user. If accepted: edit the doc on a new branch `design/<slug>/foundation-<n>`, open a small PR, and after merge `SYNCPY emit --from <brief or requirements> ...`, then message all writers (they merge `origin/main` before fixing) |
+| Change request to a foundation fact | Ask the user. If accepted: edit the doc on a new branch `design-<slug>-foundation-<n>`, open a small PR, and after merge `SYNCPY emit --from <brief or requirements> ...`, then message all writers (they merge `origin/main` before fixing) |
 | Same fact flipped twice | Stop both writers on it and ask the user |
 | Writer stuck, or silent after a CHG | Ask it for status. Reassign or restart it with the same branch if needed |
 | User asks "where are we?" | `SYNCPY`: stages, PRs, open changes |
@@ -116,7 +122,7 @@ A writer may finish while another's change still reaches its merged doc. That wr
 ---
 
 ## Wrap-up · Design summary
-1. Branch `design/<slug>/summary` from fresh `main`. Gated loop with `stage: "design"`. It writes `design.md` and `roadmap.md` (`references/stage-7-design.md`).
+1. Branch `design-<slug>-summary` from fresh `main`. Gated loop with `stage: "design"`. It writes `design.md` and `roadmap.md` (`references/stage-7-design.md`).
 2. Open the PR, the user merges, `SYNCPY stage design merged`.
 3. Final message:
    - the design folder, `design.md` as the entry point, and the ADR list
