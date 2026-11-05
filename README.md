@@ -46,7 +46,7 @@ bootstrap.sh
 |---|---|
 | Run a skill | `/bach:<skill>` e.g. `/bach:web-research <topic>`, or let Claude pick it by description |
 | Agent teammates | Start Claude inside tmux; each teammate opens in its own pane |
-| Ship a feature as parallel small PRs | `/bach:pr-team <feature>`: the lead plans a task graph, spawns `pr-builder`s (one folder each), a `pr-reviewer` and a `pr-watcher` pane that routes review comments back. You review and merge |
+| Ship a feature as parallel small PRs | `/bach:pr-team <feature>`: the lead plans a task graph, spawns `pr-builder`s (one folder each), a `pr-reviewer` and a `pr-watcher` pane that routes review comments back. You review and merge. Opt-in `review: on-demand` (ask for it, or put it in the args): no standing reviewer; big PRs get a short-lived `reviewer-pr<N>`, wait for label `pre-review:ok` before merging those |
 | Update | `git -C ~/bach-workflow pull` then `claude plugin marketplace update bach-workflow` |
 | Add a skill | Create `plugins/bach/skills/<name>/SKILL.md`, bump `version` in `plugin.json`, commit, push |
 | Change HUD display | Run `/claude-hud:configure`, or edit `~/.claude/plugins/claude-hud/config.json` |
