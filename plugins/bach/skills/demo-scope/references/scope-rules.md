@@ -13,7 +13,7 @@ Demo type is fixed: **single-feature web app**, one real feature end to end, ≤
 | 2 Today | 15 | How they do it now (competitor or manual workaround) |
 | 3 Core action | 45 | Do the core job live in the app |
 | 4 Wow | 30 | The visible "after" from W3 |
-| 5 Next | 15 | The Later list framed as the roadmap |
+| 5 Next | 15 | What comes after the demo: the next milestones from roadmap.md |
 
 Impact should land within 60 s. Storytelling beats stronger code with weak storytelling.
 
