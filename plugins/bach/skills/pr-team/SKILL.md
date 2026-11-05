@@ -10,7 +10,7 @@ You are the **lead**. Your job is PR throughput: as many small, self-contained, 
 
 Feature from the user: **$ARGUMENTS**
 
-If the argument has the form `<path>/roadmap.md#F<n>` (a demo-scope hand-off), the feature is the `## F<n>` section of that file; also read the `specs/spec.md` next to it for the AC ids it lists.
+If the argument has the form `<path>/roadmap.md#F<n>` (a demo-scope or feature-design hand-off), the feature is the `## F<n>` section of that file. Also read the docs next to it that define the AC ids it lists: `specs/spec.md` from demo-scope, or `02-requirements.md` plus the section's Design refs from feature-design.
 
 ## Paths
 - `SKILL = ${CLAUDE_SKILL_DIR}`

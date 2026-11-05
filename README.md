@@ -46,6 +46,7 @@ bootstrap.sh
 |---|---|
 | Run a skill | `/bach:<skill>` e.g. `/bach:web-research <topic>`, or let Claude pick it by description |
 | Agent teammates | Start Claude inside tmux; each teammate opens in its own pane |
+| Design a medium/large feature before building it | `/bach:feature-design <feature>`: phase 1 (brief, research, requirements) with you, one foundation PR; phase 2 runs one `design-writer` per area (data model, API, UI, backend), each on its own PR in parallel, kept consistent by change events and `design-sync`. Ends with `design.md`, ADRs and a `roadmap.md` for pr-team |
 | Ship a feature as parallel small PRs | `/bach:pr-team <feature>`: the lead plans a task graph, spawns `pr-builder`s (one folder each), a `pr-reviewer` and a `pr-watcher` pane that routes review comments back. You review and merge |
 | Update | `git -C ~/bach-workflow pull` then `claude plugin marketplace update bach-workflow` |
 | Add a skill | Create `plugins/bach/skills/<name>/SKILL.md`, bump `version` in `plugin.json`, commit, push |
