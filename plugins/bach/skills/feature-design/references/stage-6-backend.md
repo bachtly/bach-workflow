@@ -2,6 +2,8 @@
 
 How the system delivers the API and NFRs: structure, runtime behaviour under concurrency and failure, infrastructure, and how it ships safely. Pseudo-code only for a novel algorithm; link to a prototype instead when one exists.
 
+**Size limit:** about 2,000 words. Link to upstream docs instead of restating them.
+
 ## Template
 
 ```markdown
@@ -58,3 +60,4 @@ How the system delivers the API and NFRs: structure, runtime behaviour under con
 - Each rollout step can be rolled back, and migration order is compatible with deploy order.
 - New infrastructure has an ADR.
 - Module boundaries follow the repo's existing layering.
+- Within the size limit.

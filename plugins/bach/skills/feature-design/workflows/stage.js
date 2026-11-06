@@ -1,10 +1,10 @@
 export const meta = {
   name: 'feature-design-stage',
-  description: 'feature-design: draft or revise a lead-owned doc (research, requirements, design summary) from its template, then design critic + consistency check in parallel',
-  whenToUse: 'Invoked by the feature-design lead in phase 1 and in the wrap-up, once per draft and once per revision round, between user gates',
+  description: 'feature-design: bach:design-drafter writes or revises the focus stage doc from its template, then design critic + consistency check in parallel',
+  whenToUse: 'Launched by the feature-design lead in the background right after the previous stage is approved, and once per revision round',
   phases: [
     { title: 'Survey', detail: 'research stage only: nested bach:web-research (quick) + Opus low codebase survey, in parallel', model: 'opus' },
-    { title: 'Draft', detail: 'Opus medium: write or revise the stage doc from its template', model: 'opus' },
+    { title: 'Draft', detail: 'bach:design-drafter (Opus low): write or revise the stage doc', model: 'opus' },
     { title: 'Review', detail: 'bach:design-critic (Opus medium) + Sonnet low consistency check, in parallel', model: 'opus' },
   ],
 }
@@ -16,7 +16,10 @@ if (!RUN || !SKILL || !AGENTS || !A.stage) throw new Error('args need run_dir, s
 const STAGES = {
   research: { doc: '01-research.md', ref: 'stage-1-research.md', up: ['00-brief.md'] },
   requirements: { doc: '02-requirements.md', ref: 'stage-2-requirements.md', up: ['00-brief.md', '01-research.md'] },
-  // data-model, api, ui and backend are written in phase 2 by design-writer teammates, not by this workflow
+  'data-model': { doc: '03-data-model.md', ref: 'stage-3-data-model.md', up: ['00-brief.md', '01-research.md', '02-requirements.md'] },
+  api: { doc: '04-api.md', ref: 'stage-4-api.md', up: ['00-brief.md', '02-requirements.md', '03-data-model.md'] },
+  ui: { doc: '05-ui.md', ref: 'stage-5-ui.md', up: ['00-brief.md', '02-requirements.md', '04-api.md'] },
+  backend: { doc: '06-backend.md', ref: 'stage-6-backend.md', up: ['00-brief.md', '02-requirements.md', '03-data-model.md', '04-api.md', '05-ui.md'] },
   design: { doc: 'design.md', ref: 'stage-7-design.md', up: ['00-brief.md', '01-research.md', '02-requirements.md', '03-data-model.md', '04-api.md', '05-ui.md', '06-backend.md'] },
 }
 const S = STAGES[A.stage]
@@ -68,7 +71,7 @@ async function survey() {
     }
   }
   const code = () => agent(`${CTX}\n\nSurvey the target repo for this feature (brief: ${RUN}/00-brief.md). Find: how the job is done today (flow, step by step), the modules, data and contracts involved, pieces we can reuse, constraints and debt, and the repo's conventions for API, schema, layering, tests and docs.
-Cite path:line for every claim. Write ${RUN}/research/codebase.md. Return "ok".`,
+Cite path:line for every claim. Write ${RUN}/research/codebase.md, then list the folder to check the file exists. Return "ok" only if it does, otherwise the error.`,
     { label: 'codebase survey', phase: 'Survey', model: 'opus', effort: 'low' })
   const [w] = await parallel([web, code])
   return w
@@ -83,14 +86,27 @@ const sources = A.stage === 'research'
   : ''
 const extra = A.stage === 'ui' ? `\n- Reference screenshots: ${RUN}/refs/ (if any)`
   : A.stage === 'design' ? `\n- Also write ${RUN}/roadmap.md in the format the template gives. Skipped stages are listed in the brief's Stages table.` : ''
+const RETURN_NEW = `Return {summary (≤5 lines), open_questions (≤6, the ones that change the design; each with 2–4 concrete options, first one the evidence favours, label ≤5 words, header ≤12 chars), adr_candidates (significant, costly-to-reverse choices that had a real alternative), unfilled (template sections left TBD)}.`
 const task = A.revise
   ? `Revise ${DOC}. Read it first: the user may have edited it, and the user's edits win; never revert them.
-Apply the user's feedback in ${A.feedback_file} and the accepted review fixes it lists. Change only what they require.
+Apply the user's feedback in ${A.feedback_file} and the review findings it accepts. Edit only the sections they name. The reviewers' full findings were:
+${A.previous_review || '(none passed)'}
+${A.previous_consistency ? `Consistency issues: ${A.previous_consistency}
+` : ''}Change only what they require.
 Return {summary, changes (one line each), open_questions (still unresolved), adr_candidates (new ones only), unfilled}.`
   : `Write ${DOC} by filling the template completely. Where facts are missing, write "TBD: <question>" and add the question to open_questions instead of guessing.
-Return {summary (≤5 lines), open_questions (≤6, the ones that change the design; each with 2–4 concrete options, first one the evidence favours, label ≤5 words, header ≤12 chars), adr_candidates (significant, costly-to-reverse choices that had a real alternative), unfilled (template sections left TBD)}.`
-const draft = await agent(`${CTX}${sources}${extra}\n\n${task}`,
-  { label: `${A.revise ? 'revise' : 'draft'} ${A.stage}`, phase: 'Draft', model: 'opus', effort: 'medium', schema: DRAFT })
+${RETURN_NEW}`
+async function drafter() {
+  const ask = `${CTX}${sources}${extra}\n\n${task}`
+  const opts = { label: `${A.revise ? 'revise' : 'draft'} ${A.stage}`, phase: 'Draft', model: 'opus', effort: 'low', schema: DRAFT }
+  try {
+    return await agent(ask, { ...opts, agentType: 'bach:design-drafter' })
+  } catch (e) {
+    log(`design-drafter agent type unavailable (${e}); using the role file inline`)
+    return agent(`First read ${AGENTS}/design-drafter.md and follow it as your role.\n\n${ask}`, opts)
+  }
+}
+const draft = await drafter()
 
 phase('Review')
 const reviewAsk = `${CTX}\n\nReview ${DOC} for the ${A.stage} stage. Check every item of the exit checklist in the template file, traceability to the upstream docs, and plausible failure modes.` +

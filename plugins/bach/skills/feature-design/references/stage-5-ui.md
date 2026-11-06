@@ -4,6 +4,8 @@ Low-fidelity design: which screens, what's on them, every state, and which API c
 
 Inputs also include reference screenshots the user put in `refs/`.
 
+**Size limit:** about 1,500 words, wireframes excluded.
+
 ## Template
 
 ```markdown
@@ -40,3 +42,4 @@ Inputs also include reference screenshots the user put in `refs/`.
 - Every action maps to an operation in `04-api.md`, and its error is handled.
 - Existing components are reused; each new component is justified.
 - A keyboard-only path exists for every main flow.
+- Within the size limit.

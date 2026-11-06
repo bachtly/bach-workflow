@@ -2,6 +2,8 @@
 
 Every interface the feature adds or changes: HTTP, GraphQL, RPC, events, jobs, CLI, or a module's public interface. Follow the style the repo already uses. Sketch shapes; put a formal contract (for example an OpenAPI fragment in `api/`) only if the repo keeps one.
 
+**Size limit:** about 1,500 words. Shapes for new or changed operations only.
+
 ## Template
 
 ```markdown
@@ -46,3 +48,4 @@ Idempotency (mutating operations) · pagination and filtering · rate limits · 
 - Request and response shapes match the data model (types, nullability, ids).
 - No breaking change without a versioning or migration path.
 - Every consumer can build its flow from the contract.
+- Within the size limit.

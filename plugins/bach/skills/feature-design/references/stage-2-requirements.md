@@ -2,6 +2,8 @@
 
 What the feature must do, for whom, and how well, for the chosen direction only. The ids defined here (UC, US, AC, NFR) are what every later stage and the roadmap trace to.
 
+**Size limit:** at most 25 ACs and about 2,500 words. This limit wins over splitting: one AC states one trigger and lists its outcomes as sub-bullets, rather than one AC per outcome.
+
 ## Template
 
 ```markdown
@@ -34,7 +36,7 @@ Postconditions
 ## Out of scope
 ```
 
-AC use EARS patterns, one behaviour each:
+AC use EARS patterns, one trigger each:
 
 | Pattern | Form |
 |---|---|
@@ -46,8 +48,10 @@ AC use EARS patterns, one behaviour each:
 
 ## Exit checklist
 - Every use case has exception flows.
-- Every AC is testable, has an id and states one behaviour.
+- Every AC is testable, has an id and states one trigger with its outcomes.
+- At most 25 ACs.
 - Every story traces to a goal in the brief; no goal is left without a story.
 - Flows cover error, empty and permission-denied paths.
 - Every NFR has a number (latency, throughput, availability, data volume, retention, accessibility level).
 - Uses glossary terms only.
+- Within the size limit.

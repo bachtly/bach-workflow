@@ -4,6 +4,8 @@ Brainstorm grounded in two kinds of evidence: how **our system** works today, an
 
 Inputs: `00-brief.md`, `research/codebase.md` (codebase survey), the web-research `report.md` and `analysis_*.csv`.
 
+**Size limit:** about 1,500 words, plus the sources table.
+
 ## Template
 
 ```markdown
@@ -41,3 +43,4 @@ Inputs: `00-brief.md`, `research/codebase.md` (codebase survey), the web-researc
 - The comparison criteria come from the brief, not invented after the fact.
 - The recommendation names the trade-off it accepts.
 - The chosen direction becomes an ADR candidate.
+- Within the size limit.

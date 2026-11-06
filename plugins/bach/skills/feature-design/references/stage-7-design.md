@@ -2,6 +2,8 @@
 
 `design.md` is the entry point a reviewer reads in about 15 minutes, shaped like a classic design doc. It summarises and links the stage docs; it doesn't repeat them. Sections of skipped stages are written here in a few lines.
 
+**Size limit:** `design.md` about 1,500 words (a 15-minute read); `roadmap.md` one screen per slice.
+
 ## `design.md` template
 
 ```markdown
@@ -36,3 +38,4 @@ The same format pr-team reads from demo-scope:
 - Alternatives considered lists at least one rejected option with its reason.
 - Every open question has an owner.
 - Pre-mortem: the critic's "it is six months later and this failed: why?" answers are either mitigated or listed as risks.
+- Within the size limit.

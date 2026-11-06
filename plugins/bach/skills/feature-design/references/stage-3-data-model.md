@@ -2,6 +2,8 @@
 
 Only new or changed persisted state, plus the neighbours it relates to. Show shape and rules, not a full DDL dump: the schema itself is written during implementation.
 
+**Size limit:** about 1,500 words. Only new or changed tables; no full DDL.
+
 ## Template
 
 ```markdown
@@ -44,3 +46,4 @@ Only new or changed persisted state, plus the neighbours it relates to. Show sha
 - The migration runs safely alongside the currently deployed code and can be rolled back.
 - PII is marked, with retention and deletion.
 - Names and types follow the repo's existing schema conventions.
+- Within the size limit.
