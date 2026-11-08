@@ -201,6 +201,20 @@ class IdleHook(Base):
         self.claim("builder-2")  # holds be-schema without a PR: waiting on purpose
         self.assertEqual(self.hook("builder-2").returncode, 0)
 
+    def test_every_call_in_a_run_is_logged(self):
+        self.hook("builder-1")
+        self.hook("pr-watcher")
+        event = json.dumps({"hook_event_name": "TeammateIdle", "cwd": self.repo})  # no teammate_name
+        subprocess.run([sys.executable, os.path.join(HERE, "idle_claim.py")], input=event,
+                       capture_output=True, text=True, env=self.env)
+        with open(os.path.join(self.run_dir, ".idle-hook.log")) as f:
+            rows = [json.loads(l) for l in f]
+        self.assertEqual([(r["teammate_name"], r["exit"]) for r in rows],
+                         [("builder-1", 2), ("pr-watcher", 0), (None, 0)])
+        self.assertEqual(rows[0]["reason"], "pushed to be-schema")
+        self.assertEqual(rows[2]["reason"], "no teammate_name in input")
+        self.assertIn("cwd", rows[0]["keys"])
+
     def test_no_run_no_op(self):
         os.remove(self.plan)
         self.assertEqual(self.hook("builder-1").returncode, 0)

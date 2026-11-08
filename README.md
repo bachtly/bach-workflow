@@ -47,8 +47,8 @@ bootstrap.sh
 | Run a skill | `/bach:<skill>` e.g. `/bach:web-research <topic>`, or let Claude pick it by description |
 | Agent teammates | Start Claude inside tmux; each teammate opens in its own pane |
 | Design a medium/large feature before building it | `/bach:feature-design <feature>`: one focus doc at a time (brief, research, requirements and flows, data model, API, UI, backend), each drafted in the background by `design-drafter` as soon as the previous one is approved, reviewed by `design-critic`, and approved by you. Ends with `design.md`, ADRs and a `roadmap.md` for pr-team |
-| Ship a feature as parallel small PRs | `/bach:pr-team <feature>`: the lead plans a task graph with you, then you start the run fresh (`/clear`, `/model sonnet`, `/bach:pr-team run`). It spawns `pr-builder`s (one folder each, replaced fresh every few tasks) and a `pr-watcher` pane that announces PRs and routes review comments back. Big PRs get a short-lived `reviewer-pr<N>`: wait for label `pre-review:ok` before merging those. Opt-in `review: standing` keeps one reviewer for every PR. Builders record PRs with `run.py` instead of messaging the lead, so the lead only wakes for decisions; `python3 <skill>/scripts/run.py status` shows your TODO list and the PR table. You review and merge |
-| Update | `git -C ~/bach-workflow pull` then `claude plugin marketplace update bach-workflow` |
+| Ship a feature as parallel small PRs | `/bach:pr-team <feature>` plans with you; then `/clear`, `/model sonnet`, `/bach:pr-team run` runs it: builders (one folder each) plus a `pr-watcher` pane. Big PRs get a `reviewer-pr<N>`: merge those after label `pre-review:ok`. Details in the skill's `SKILL.md` |
+| Update | `git -C ~/bach-workflow pull` then `claude plugin marketplace update bach-workflow`. Re-run `~/bach-workflow/bootstrap.sh` when a release adds a setting (0.5.0 adds `subagentPromptCacheTtl`) |
 | Add a skill | Create `plugins/bach/skills/<name>/SKILL.md`, bump `version` in `plugin.json`, commit, push |
 | Change HUD display | Run `/claude-hud:configure`, or edit `~/.claude/plugins/claude-hud/config.json` |
 

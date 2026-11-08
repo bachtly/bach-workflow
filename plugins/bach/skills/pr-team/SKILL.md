@@ -16,14 +16,10 @@ You are the **lead**. Your job is PR throughput: as many small, self-contained, 
 
 Arguments: **$ARGUMENTS**
 
-- `run` (or `run <path>/plan.md`): an approved plan exists. Skip to [Step 2](#step-2--spawn-run-phase).
+- `run` (or `run <path>/plan.md`): an approved plan exists. First check it: `python3 CLAIM team-lead --plan <plan.md> --peek` (writes nothing). If the file is missing or it exits 2 (no `Plan:` line, no task table, bad ids), tell the user what it printed and to plan first with `/bach:pr-team <feature>`, and stop. Otherwise run Preflight, then skip to [Step 2](#step-2--spawn-run-phase).
 - Anything else is the feature: start at Step 1. If it has the form `<path>/roadmap.md#F<n>` (a demo-scope or feature-design hand-off), the feature is the `## F<n>` section of that file. Also read the docs next to it that define the AC ids it lists: `specs/spec.md` from demo-scope, or `02-requirements.md` plus the section's Design refs from feature-design.
 
-## Budget model (why this skill is shaped the way it is)
-Cost ≈ turns × context size, per agent. A lead turn re-reads the whole lead context, so an Opus lead at 200k+ tokens that wakes for every teammate message costs more than all builders together. So:
-- **Routine events never reach you.** Builders claim, check scope and record PRs with scripts; the watcher tells the human about PRs and wakes waiting builders; lessons and decisions go into `plan.md` by script. You wake only for judgment: big-PR reviewers, scope questions, retire/replace, a dropped task, and the user.
-- **Your run phase starts small.** Plan in one session, then run from a fresh one (Step 1 hand-off).
-- **Teammates are short-lived.** Builders retire after a few tasks and get replaced fresh; reviewers live for one PR.
+**Why the run is shaped this way:** cost ≈ turns × context size per agent, and each of your turns re-reads your whole context. So scripts and the watcher handle routine events, you wake only for judgment, the run phase starts from a fresh session, and teammates are short-lived.
 
 ## Paths
 - `SKILL = ${CLAUDE_SKILL_DIR}`
@@ -32,6 +28,8 @@ Cost ≈ turns × context size, per agent. A lead turn re-reads the whole lead c
 - `CLAIM = SKILL/scripts/claim.py`
 - `RUN_PY = SKILL/scripts/run.py` (run state: PRs, human TODO, lessons, decisions, status table, scope check)
 - `SHOTS = SKILL/references/screenshots.md`
+- `RULES = SKILL/references/team-rules.md` (messaging rules and lesson criteria for every teammate)
+- `STANDING = SKILL/references/standing-review.md` (everything about opt-in `review: standing`)
 - `RUN = .claude/pr-team/` in the project root. Holds `plan.md`, `status.json` (written only by `RUN_PY`), the watcher's `state.json` and builders' `claims/`.
 
 ## Preflight (stop and tell the user if any fails)
@@ -41,9 +39,9 @@ Cost ≈ turns × context size, per agent. A lead turn re-reads the whole lead c
 | Running inside tmux (`$TMUX` set) and `teammateMode` is `tmux` | `tmux new -s work`, then `claude` |
 | `gh auth status` ok, repo has a GitHub remote | `gh auth login` |
 | `git status` clean on `main` | Commit or stash first |
-| `subagentPromptCacheTtl` is `"1h"` in settings | Add it (`bootstrap.sh` does this). Teammates that wait longer than the 5-minute default re-write their whole cache on wake |
 
-Then two budget tips, once, in one short message (don't block on them):
+Then budget tips, once, in one short message (don't block on them):
+- If `subagentPromptCacheTtl` isn't `"1h"` in settings: suggest re-running `bootstrap.sh` (or adding it by hand). Teammates that wait longer than the 5-minute default re-write their whole cache on wake.
 - MCP servers this run doesn't use (mail, calendar, docs, design, cloud consoles) still load names and instructions into every session, teammates included. Suggest disabling them for this project with `/mcp`, and checking `/context`.
 - Teammate permission prompts appear in **your** pane, and each one is a lead turn. Suggest allowing `Bash(gh:*)`, `Bash(git:*)` and `Bash(python3:*)` for this project.
 
@@ -73,7 +71,7 @@ Then two budget tips, once, in one short message (don't block on them):
    - Builders retire after `Retire builders after: <n>` tasks (default 3) and are replaced fresh, so contexts stay small.
    - **Review mode** (a `Review: on-demand|standing` line):
      - `on-demand` (default): no standing reviewer. Big PRs get a short-lived `reviewer-pr<N>` (Step 4), at most `max_reviewers` alive (default 3). Small PRs get no pre-review.
-     - `standing` (only if the user asks): 1 `pr-reviewer` per 3–4 builders (`reviewer-1..M`) that reviews every PR, and retires after 4 PRs to be replaced fresh.
+     - `standing` (only if the user asks): reviewers that review every PR. Read `STANDING` for the team size and rules; nothing else in this file changes.
    - 1 `pr-watcher`, always.
 7. **Review budget.** Ask the user how many open PRs they can keep up with (default 5). This is the WIP limit on open PRs, not on agents. `CLAIM` enforces it: with the budget full, builders get `none: review budget full` and wait.
 8. Write `RUN/plan.md` and present it:
@@ -92,9 +90,9 @@ Then two budget tips, once, in one short message (don't block on them):
 1. Read only `RUN/plan.md` and the output of `python3 RUN_PY status` (empty on a new run). Don't re-read the design docs or the codebase: builders read what their task needs.
 2. Spawn teammates with predictable names: `builder-1..N`, `pr-watcher`, and in standing mode `reviewer-1..M`. Use the plugin agent types `bach:pr-builder`, `bach:pr-reviewer`, `bach:pr-watcher`. Spawn from the project directory (a hook blocks a spawn from anywhere else). Keep prompts to the lines below: everything in a spawn prompt is in that teammate's context for its whole life.
    - If the runtime refuses a plugin agent type as a teammate, spawn a general teammate and paste the body of `AGENTS/<role>.md` at the top of its prompt.
-   - Builder prompt: its name, the repo root, `CLAIM=`, `RUN_PY=`, `PLAN=`, `SHOTS=` (absolute paths), the review mode, and in standing mode its reviewer's name.
-   - Reviewer prompt (standing): its name, the repo root, `PLAN=`, `RUN_PY=`.
-   - Watcher prompt: `POLL=`, `RUN_PY=`, `STATE=<absolute RUN/state.json>`, `STATUS=<absolute RUN/status.json>`, `CLAIMS=<absolute RUN/claims/<plan id>>`, the list of builder names, and the review mode.
+   - Builder prompt: its name, the repo root, `CLAIM=`, `RUN_PY=`, `PLAN=`, `SHOTS=`, `RULES=` (absolute paths), the review mode, and in standing mode `STANDING=` and its reviewer's name.
+   - Standing reviewers: see `STANDING`.
+   - Watcher prompt: `POLL=`, `RUN_PY=`, `RULES=`, `STATE=<absolute RUN/state.json>`, `STATUS=<absolute RUN/status.json>`, `CLAIMS=<absolute RUN/claims/<plan id>>`, the list of builder names, and the review mode.
 3. No plan approval for builders. They check their own scope with `RUN_PY scope` and put their plan in the PR body; scope leaks are caught there and by the reviewer.
 
 ## Step 3 · Run (your loop)
@@ -115,7 +113,9 @@ You react to teammate messages. Don't poll. **Most wakes need no action**: decid
 | Builder stuck 3+ attempts on the same error | Stop it, re-scope or reassign the task (release its claim: `rm RUN/claims/<plan>/<task>`) |
 | `none: all tasks claimed` from every builder | Run `RUN_PY status`. No open PRs: ask builders, reviewers, then the watcher to shut down, and post the final summary (status output plus PRs merged). Open PRs left: shut the builders down, keep the watcher and reviewers until they merge |
 
-What you no longer do (scripts and the watcher own it): approve builder plans, record PRs or human steps, tell the human a PR is ready, count open PRs or pause builders, relay merges, wake idle builders, write lessons. The `TeammateIdle` hook (plugin `hooks/hooks.json`, `scripts/idle_claim.py`) keeps a builder working when a task is claimable, so its idle never reaches you in the first place.
+Scripts and the watcher own the routine work (plan checks, PR records, human steps, PR announcements, the review budget, merges, waking builders, lessons): don't do it yourself.
+
+**The idle hook is best-effort.** The plugin's `TeammateIdle` hook (`scripts/idle_claim.py`) tries to keep a builder working when a task is claimable, so its idle never reaches you. It logs every call to `RUN/.idle-hook.log`. A builder's `none: …` normally means nothing is claimable, so ignore it. Check once per run, the first time one arrives after a merge: if `python3 CLAIM <that builder> --plan RUN/plan.md --peek` prints `claimed <id>` and `RUN/.idle-hook.log` is missing, the hook isn't active in this setup. Tell the user once, and from then on tell idle builders to claim again (one line) when a PR merges.
 
 ## Stay responsive: orchestrate, don't execute
 
@@ -138,11 +138,10 @@ Reply to the user within seconds: what you decided and who owns it.
 
 ## Review lessons
 
-Goal: a mistake caught once in review is not repeated by the next builder. Teammates add lessons themselves with `RUN_PY lesson "[<folder>|all] <rule> — PR #n" --by <who>`, which appends to `## Lessons` in `RUN/plan.md` and drops exact repeats. Builders read it before every task, reviewers check against it. The pickiness rules below are in every teammate's prompt file, so you don't filter each lesson.
+Goal: a mistake caught once in review is not repeated by the next builder. Teammates add lessons themselves with `RUN_PY lesson`, which appends to `## Lessons` in `RUN/plan.md` and drops exact repeats. The criteria for a lesson are in `RULES`, which every teammate reads, so you don't filter each one. Builders read `## Lessons` before every task, reviewers check against it.
 
-- **Picky.** A lesson is a rule for future PRs (not a fix for this one), checkable on a diff, from a human comment or a reviewer blocker, and not already enforced by the repo's `CLAUDE.md`, a linter or a test.
 - **Merge when asked.** When `RUN_PY` reports more than 10 lines, re-read the section in one go: fold similar lines into one more general rule, remove lines a `CLAUDE.md` now covers, drop the least useful. Keep at most 10, one imperative line each, ending with their sources: `- [all] A test for a fix must fail when the fix is reverted — PR #8, #18`. Use `[all]` unless the rule is truly about one folder.
-- When every other task is claimed and `## Lessons` has lines not yet in the repo's `CLAUDE.md` files, add a last task row `lessons-docs`: files = root `CLAUDE.md` (for `[all]`) and `<folder>/CLAUDE.md` (for folder lessons). Acceptance: each lesson merged into the existing rules there (no near-duplicates, the same pickiness bar), one line each. The human reviews it like any PR.
+- When every other task is claimed and `## Lessons` has lines not yet in the repo's `CLAUDE.md` files, add a last task row `lessons-docs`: files = root `CLAUDE.md` (for `[all]`) and `<folder>/CLAUDE.md` (for folder lessons). Acceptance: each lesson merged into the existing rules there (no near-duplicates, the same criteria as `RULES`), one line each. The human reviews it like any PR.
 
 ## Step 4 · Review on demand (default; skip in `review: standing`)
 
@@ -156,7 +155,7 @@ Small PRs never reach you; the watcher tells the human "PR #N ready, no pre-revi
 
 For a big PR, spawn ONE teammate `reviewer-pr<N>` (`bach:pr-reviewer`, Agent tool with `name`) for that PR only:
 - **Model**: `opus` when the reason includes contract/migration/security; otherwise pass `model: "sonnet"` (UI, size or verification reasons need checks, not deep reasoning).
-- Prompt: `review: on-demand`, PR number, owning builder name, repo root, `PLAN=`, `RUN_PY=`.
+- Prompt: `review: on-demand`, PR number, owning builder name, repo root, `PLAN=`, `RUN_PY=`, `RULES=`.
 - `RUN_PY set <task> reviewer=reviewer-pr<N>`. The watcher tells the human to wait for label `pre-review:ok` before merging it.
 
 - Several big PRs → several reviewers in parallel, at most `max_reviewers` alive. Over the cap, note the PR in `plan.md` and spawn when a reviewer finishes.
