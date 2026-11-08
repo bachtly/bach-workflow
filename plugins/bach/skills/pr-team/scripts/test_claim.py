@@ -102,6 +102,30 @@ class Pick(unittest.TestCase):
         self.assertEqual(self.pick("b2", claims, prs), ("none", "all tasks claimed"))
 
 
+class Budget(unittest.TestCase):
+    def setUp(self):
+        self.plan_id, self.tasks, _ = claim.parse_plan(PLAN)
+
+    def test_budget_line_is_parsed(self):
+        self.assertEqual(claim.review_budget(PLAN), 2)
+        self.assertIsNone(claim.review_budget("Plan: x\n"))
+
+    def test_full_budget_stops_new_claims(self):
+        claims = {"be-schema": {"builder": "b1", "at": 100}, "docs-readme": {"builder": "b2", "at": 100}}
+        prs = [("be-schema", "OPEN", 1, 200), ("docs-readme", "OPEN", 2, 200)]
+        claims["fe-page"] = {"builder": "b3", "at": 100}  # held without a PR: b3 still gets it
+        self.assertEqual(claim.pick("b3", self.tasks, claims, prs, budget=2)[0], "held")
+        kind, why = claim.pick("b4", self.tasks, claims, prs, budget=2)
+        self.assertEqual(kind, "none")
+        self.assertIn("review budget full: 2 open PRs (budget 2): #1, #2", why)
+
+    def test_merged_prs_free_the_budget(self):
+        claims = {"be-schema": {"builder": "b1", "at": 100}, "docs-readme": {"builder": "b2", "at": 100}}
+        prs = [("be-schema", "MERGED", 1, 200), ("docs-readme", "OPEN", 2, 200)]
+        kind, task = claim.pick("b1", self.tasks, claims, prs, budget=2)
+        self.assertEqual((kind, task["id"]), ("claimed", "be-route"))
+
+
 class Cli(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -138,7 +162,31 @@ class Cli(unittest.TestCase):
         claimed = sorted(v for v in out.values() if v.startswith("claimed"))
         self.assertEqual(claimed, ["claimed be-schema", "claimed docs-readme"])
         names = sorted(os.listdir(os.path.join(self.run_dir, "claims", "run-1")))
-        self.assertEqual(names, [".lock", "be-schema", "docs-readme"])
+        self.assertEqual(names, [".lock", ".waiting", "be-schema", "docs-readme"])
+        # the four builders that got `none` are marked waiting, the two that claimed are not
+        self.assertEqual(len(claim.waiting_builders(os.path.join(self.run_dir, "claims", "run-1"))), 4)
+
+    def test_peek_writes_nothing(self):
+        out = subprocess.run([sys.executable, self.script, "b1", "--plan", self.plan, "--peek"],
+                             capture_output=True, text=True, env=self.env)
+        self.assertEqual(out.stdout.split("\n")[0], "claimed be-schema")
+        self.assertEqual(sorted(os.listdir(os.path.join(self.run_dir, "claims", "run-1"))), [".lock"])
+
+    def test_peek_reports_a_held_task(self):
+        self.claim("b1")
+        out = subprocess.run([sys.executable, self.script, "b1", "--plan", self.plan, "--peek"],
+                             capture_output=True, text=True, env=self.env)
+        self.assertEqual(out.stdout.split("\n")[0], "held be-schema")
+        self.assertEqual(self.claim("b1").stdout.split("\n")[0], "claimed be-schema")  # a real claim hands it out again
+
+    def test_a_claim_clears_the_waiting_mark(self):
+        claims_dir = os.path.join(self.run_dir, "claims", "run-1")
+        self.claim("b1"), self.claim("b2")
+        self.assertEqual(self.claim("b3").stdout.split("\n")[0][:5], "none:")
+        self.assertEqual(claim.waiting_builders(claims_dir), ["b3"])
+        os.remove(os.path.join(claims_dir, "be-schema"))  # the lead releases a claim
+        self.assertEqual(self.claim("b3").stdout.split("\n")[0], "claimed be-schema")
+        self.assertEqual(claim.waiting_builders(claims_dir), [])
 
     def test_prs_are_asked_per_task_branch_without_a_repo_wide_limit(self):
         log = os.path.join(self.tmp.name, "gh.log")

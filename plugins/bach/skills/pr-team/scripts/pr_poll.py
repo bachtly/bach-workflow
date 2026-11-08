@@ -79,7 +79,7 @@ def snapshot(pr):
     base = {"pr": pr["number"], "url": pr["url"], "branch": pr["headRefName"]}
     items[f"pr:{pr['number']}:state"] = (
         f"{pr['state']}|{pr['reviewDecision']}|{pr['isDraft']}",
-        {**base, "kind": "pr_state", "state": pr["state"],
+        {**base, "kind": "pr_state", "title": pr["title"], "state": pr["state"],
          "review_decision": pr["reviewDecision"], "draft": pr["isDraft"]})
     items[f"pr:{pr['number']}:reactions"] = (
         json.dumps(reactions(pr["reactionGroups"]), sort_keys=True),
@@ -153,6 +153,8 @@ def one_pass(args, state):
                 continue
             if ev["kind"] == "thread_state" and new_item:
                 continue
+            if ev["kind"] == "pr_state":
+                ev["new"] = new_item  # first time this PR is seen: the watcher announces it
             if "thread_id" in ev:
                 ev["fix_rounds"] = state["rounds"].get(ev["thread_id"], 0)
             events.append(ev)

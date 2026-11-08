@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "TeammateIdle": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/pr-team/scripts/idle_claim.py\"",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}
