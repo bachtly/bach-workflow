@@ -15,7 +15,6 @@ Item files (written by agents):
   judge/<round>-<phase>.json  {round, phase, terms, new_terms, new_facts, contradictions, next_queue, stop}
 """
 import csv
-import fcntl
 import glob
 import json
 import os
@@ -24,6 +23,11 @@ import sys
 import tempfile
 from contextlib import contextmanager
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RECALL_TOP = 20
@@ -77,15 +81,38 @@ def flat(v):
     return "" if v is None else str(v)
 
 
+if os.name == "nt":
+    def _lock(f):
+        # msvcrt has no blocking mode: LK_LOCK retries for ~10 s, then raises. Keep retrying.
+        # It locks from the current position, so always lock byte 0.
+        while True:
+            f.seek(0)
+            try:
+                msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
+                return
+            except OSError:
+                continue
+
+    def _unlock(f):
+        f.seek(0)
+        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+else:
+    def _lock(f):
+        fcntl.flock(f, fcntl.LOCK_EX)
+
+    def _unlock(f):
+        fcntl.flock(f, fcntl.LOCK_UN)
+
+
 @contextmanager
 def locked(run_dir):
     os.makedirs(run_dir, exist_ok=True)
     with open(os.path.join(run_dir, ".lock"), "w") as lf:
-        fcntl.flock(lf, fcntl.LOCK_EX)
+        _lock(lf)
         try:
             yield
         finally:
-            fcntl.flock(lf, fcntl.LOCK_UN)
+            _unlock(lf)
 
 
 def load_dir(run_dir, sub, pattern="*.json"):
