@@ -34,13 +34,14 @@ chmod +x "$REPO/setup/hud-statusline.sh"
 ln -sfn "$REPO/setup/hud-statusline.sh" "$CLAUDE_DIR/hud-statusline.sh"
 echo "linked $CLAUDE_DIR/hud-statusline.sh"
 
-step 3/5 "settings.json (statusLine, teammateMode, agent teams env only)"
+step 3/5 "settings.json (statusLine, teammateMode, subagent cache TTL, agent teams env only)"
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
 cp "$SETTINGS" "$SETTINGS.bak.$(date +%Y%m%d-%H%M%S)"
 tmp=$(mktemp)
 jq --arg cmd "$CLAUDE_DIR/hud-statusline.sh" \
   '.statusLine = {type: "command", command: $cmd, padding: 0, refreshInterval: 5}
    | .teammateMode = "tmux"
+   | .subagentPromptCacheTtl = "1h"
    | .env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"' "$SETTINGS" > "$tmp"
 mv "$tmp" "$SETTINGS"
 echo "updated (backup kept)"

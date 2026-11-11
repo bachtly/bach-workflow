@@ -1,6 +1,6 @@
 ---
 name: pr-team
-description: Lead an agent team that ships a feature as many small, self-contained PRs in parallel. Plans the task graph and folder map, fans builders out horizontally or vertically, adds a pre-reviewer and a PR watcher (own tmux pane) that routes review comments back to builders. Opt-in `review: on-demand` replaces the standing reviewer with a short-lived per-PR reviewer for big PRs only. Use when the user wants to build a feature with parallel agents, small PRs, or continuous PR delivery.
+description: Lead an agent team that ships a feature as many small, self-contained PRs in parallel. Plans the task graph and folder map in one session, then runs the team from a fresh, lean session. Builders self-claim, self-check scope and record PRs in a run-state file, so the lead wakes only for decisions. Short-lived per-PR reviewers for big PRs by default (opt-in `review: standing`), and a PR watcher (own tmux pane) that tells the human about PRs and routes review comments back to builders. Use when the user wants to build a feature with parallel agents, small PRs, or continuous PR delivery.
 disable-model-invocation: true
 hooks:
   PreToolUse:
@@ -14,17 +14,23 @@ hooks:
 
 You are the **lead**. Your job is PR throughput: as many small, self-contained, mergeable PRs per hour as the human can review. You plan and dispatch. **You never write feature code yourself.**
 
-Feature from the user: **$ARGUMENTS**
+Arguments: **$ARGUMENTS**
 
-If the argument has the form `<path>/roadmap.md#F<n>` (a demo-scope or feature-design hand-off), the feature is the `## F<n>` section of that file. Also read the docs next to it that define the AC ids it lists: `specs/spec.md` from demo-scope, or `02-requirements.md` plus the section's Design refs from feature-design.
+- `run` (or `run <path>/plan.md`): an approved plan exists. First check it: `python3 CLAIM team-lead --plan <plan.md> --peek` (writes nothing). If the file is missing or it exits 2 (no `Plan:` line, no task table, bad ids), tell the user what it printed and to plan first with `/bach:pr-team <feature>`, and stop. Otherwise run Preflight, then skip to [Step 2](#step-2--spawn-run-phase).
+- Anything else is the feature: start at Step 1. If it has the form `<path>/roadmap.md#F<n>` (a demo-scope or feature-design hand-off), the feature is the `## F<n>` section of that file. Also read the docs next to it that define the AC ids it lists: `specs/spec.md` from demo-scope, or `02-requirements.md` plus the section's Design refs from feature-design.
+
+**Why the run is shaped this way:** cost ≈ turns × context size per agent, and each of your turns re-reads your whole context. So scripts and the watcher handle routine events, you wake only for judgment, the run phase starts from a fresh session, and teammates are short-lived.
 
 ## Paths
 - `SKILL = ${CLAUDE_SKILL_DIR}`
 - `AGENTS = ${CLAUDE_PLUGIN_ROOT}/agents`
 - `POLL = SKILL/scripts/pr_poll.py`
 - `CLAIM = SKILL/scripts/claim.py`
+- `RUN_PY = SKILL/scripts/run.py` (run state: PRs, human TODO, lessons, decisions, status table, scope check)
 - `SHOTS = SKILL/references/screenshots.md`
-- `RUN = .claude/pr-team/` in the project root. Holds `plan.md`, the watcher's `state.json` and builders' `claims/`.
+- `RULES = SKILL/references/team-rules.md` (messaging rules and lesson criteria for every teammate)
+- `STANDING = SKILL/references/standing-review.md` (everything about opt-in `review: standing`)
+- `RUN = .claude/pr-team/` in the project root. Holds `plan.md`, `status.json` (written only by `RUN_PY`), the watcher's `state.json` and builders' `claims/`.
 
 ## Preflight (stop and tell the user if any fails)
 | Check | Fix |
@@ -34,7 +40,10 @@ If the argument has the form `<path>/roadmap.md#F<n>` (a demo-scope or feature-d
 | `gh auth status` ok, repo has a GitHub remote | `gh auth login` |
 | `git status` clean on `main` | Commit or stash first |
 
-Teammate permission prompts appear in **your** pane. Suggest the user allow `Bash(gh:*)` and `Bash(git:*)` for this project if they haven't.
+Then budget tips, once, in one short message (don't block on them):
+- If `subagentPromptCacheTtl` isn't `"1h"` in settings: suggest re-running `bootstrap.sh` (or adding it by hand). Teammates that wait longer than the 5-minute default re-write their whole cache on wake.
+- MCP servers this run doesn't use (mail, calendar, docs, design, cloud consoles) still load names and instructions into every session, teammates included. Suggest disabling them for this project with `/mcp`, and checking `/context`.
+- Teammate permission prompts appear in **your** pane, and each one is a lead turn. Suggest allowing `Bash(gh:*)`, `Bash(git:*)` and `Bash(python3:*)` for this project.
 
 ## Step 1 · Plan (plan mode, with the user)
 
@@ -51,7 +60,7 @@ Teammate permission prompts appear in **your** pane. Suggest the user allow `Bas
    | Intent | One per PR |
 
    A task that fails the rubric gets split, not stretched. Use `gh stack` only when a dependency truly can't be broken; say so in the plan.
-3. For each task record: id (short kebab, also the branch name), folder, files it will touch, `blockedBy`, acceptance criteria, flag (if any).
+3. For each task record: id (short kebab, also the branch name), folder, files it will touch (name a shared contract file here too: it is the only file outside the folder that `RUN_PY scope` allows), `blockedBy`, acceptance criteria, flag (if any).
 4. **Conflict check.** Tasks whose file sets overlap may not run in parallel: add a `blockedBy` between them. Parallel work fails at planning, not tooling.
 5. **Pick the shape.**
    - **Horizontal**: tasks are independent and folders are disjoint → one builder per folder.
@@ -59,117 +68,106 @@ Teammate permission prompts appear in **your** pane. Suggest the user allow `Bas
    Most features are vertical for one step, then horizontal.
 6. **Size the team.**
    - Builders = min(tasks ready now, disjoint folders, 5). Above 5, coordination costs more than it adds.
-   - Queue 5–6 tasks per builder so each self-claims the next one.
-   - 1 `pr-reviewer` per 3–4 builders (at least 1 when builders ≥ 2).
-   - **Opt-in `review: on-demand`** (only if the user asks for it, or passes `review: on-demand` in the args or plan.md): no standing reviewer; reviewers are spawned per big PR in Step 4 (cap `max_reviewers`, default 3).
+   - Builders retire after `Retire builders after: <n>` tasks (default 3) and are replaced fresh, so contexts stay small.
+   - **Review mode** (a `Review: on-demand|standing` line):
+     - `on-demand` (default): no standing reviewer. Big PRs get a short-lived `reviewer-pr<N>` (Step 4), at most `max_reviewers` alive (default 3). Small PRs get no pre-review.
+     - `standing` (only if the user asks): reviewers that review every PR. Read `STANDING` for the team size and rules; nothing else in this file changes.
    - 1 `pr-watcher`, always.
-7. **Review budget.** Ask the user how many open PRs they can keep up with (default 5). This is the WIP limit on open PRs, not on agents.
-8. Write `RUN/plan.md` (task table + shape + team + review budget + review mode) and present it. It has a `Plan: <id>` line (letters, digits, `.`, `_`, `-`, e.g. `20261024-1000`; new for a new run, unchanged on re-plan, since claims are kept per plan id), and a task table with `id | folder | files | blockedBy | acceptance criteria | flag` columns (these exact names) in priority order (critical path first); in on-demand mode it also has `size | reviewer` columns, plus a `max_reviewers` line. Task ids are short kebab names (`a-z`, `0-9`, `-`): each is also the task's branch name. Builders claim from it with `CLAIM`. It also has an empty `## Lessons` section (see [Review lessons](#review-lessons)). Exit plan mode only after the user approves.
+7. **Review budget.** Ask the user how many open PRs they can keep up with (default 5). This is the WIP limit on open PRs, not on agents. `CLAIM` enforces it: with the budget full, builders get `none: review budget full` and wait.
+8. Write `RUN/plan.md` and present it:
+   - a `Plan: <id>` line (letters, digits, `.`, `_`, `-`, e.g. `20261024-1000`; new for a new run, unchanged on re-plan, since claims are kept per plan id),
+   - `Review: on-demand|standing`, `Review budget: <n>`, `Retire builders after: <n>`, and in on-demand mode `max_reviewers: <n>` lines,
+   - the task table with `id | folder | files | blockedBy | acceptance criteria | flag` columns (these exact names), in priority order (critical path first). Task ids are short kebab names (`a-z`, `0-9`, `-`): each is also the task's branch name,
+   - the shape and team, and empty `## Decisions` and `## Lessons` sections.
+   Exit plan mode only after the user approves.
+9. **Hand-off to a fresh lead session.** Everything the run needs is in `plan.md` now, and this session carries the whole planning context. Tell the user, in one message:
+   > Plan saved. To run it cheaply, start the run phase fresh: `/clear`, then `/model sonnet`, then `/bach:pr-team run`.
+   > A Sonnet lead is enough for dispatching; I'll hand any hard re-plan to an Opus helper.
+   Stop here. If the user says to keep going in this session instead, go to Step 2 now (it works, it just costs more per turn).
 
-## Step 2 · Spawn
+## Step 2 · Spawn (run phase)
 
-1. Spawn teammates with predictable names: `builder-1..N`, `reviewer-1..M`, `pr-watcher`. Use the plugin agent types `bach:pr-builder`, `bach:pr-reviewer`, `bach:pr-watcher`. In on-demand mode skip `reviewer-1..M`. Spawn from the project directory (a hook blocks a spawn from anywhere else).
+1. Read only `RUN/plan.md` and the output of `python3 RUN_PY status` (empty on a new run). Don't re-read the design docs or the codebase: builders read what their task needs.
+2. Spawn teammates with predictable names: `builder-1..N`, `pr-watcher`, and in standing mode `reviewer-1..M`. Use the plugin agent types `bach:pr-builder`, `bach:pr-reviewer`, `bach:pr-watcher`. Spawn from the project directory (a hook blocks a spawn from anywhere else). Keep prompts to the lines below: everything in a spawn prompt is in that teammate's context for its whole life.
    - If the runtime refuses a plugin agent type as a teammate, spawn a general teammate and paste the body of `AGENTS/<role>.md` at the top of its prompt.
-   - Builder prompt: its name, the repo root, `CLAIM=<absolute path>`, `PLAN=<absolute RUN/plan.md>`, `SHOTS=<absolute path>`, the folder-ownership rule, and the review mode.
-   - Reviewer prompt: its name, the repo root, `PLAN=<absolute RUN/plan.md>`.
-   - Watcher prompt: `POLL=<absolute path>`, `STATE=<absolute RUN/state.json>`, the list of builder names, `CLAIMS=<absolute RUN/claims/<plan id>>`, and the review mode.
-2. Require plan approval for builders: approve a builder's plan only if its files stay inside the task's folder.
+   - Builder prompt: its name, the repo root, `CLAIM=`, `RUN_PY=`, `PLAN=`, `SHOTS=`, `RULES=` (absolute paths), the review mode, and in standing mode `STANDING=` and its reviewer's name.
+   - Standing reviewers: see `STANDING`.
+   - Watcher prompt: `POLL=`, `RUN_PY=`, `RULES=`, `STATE=<absolute RUN/state.json>`, `STATUS=<absolute RUN/status.json>`, `CLAIMS=<absolute RUN/claims/<plan id>>`, the list of builder names, and the review mode.
+3. No plan approval for builders. They check their own scope with `RUN_PY scope` and put their plan in the PR body; scope leaks are caught there and by the reviewer.
 
 ## Step 3 · Run (your loop)
 
-You react to teammate messages and task changes. Don't poll.
+You react to teammate messages. Don't poll. **Most wakes need no action**: decide fast, act once, stay quiet.
 
-| Signal | Action |
+| What woke you | Action |
 |---|---|
-| Builder plan arrives | Approve if in-scope; otherwise send it back with the rubric line it breaks |
-| Builder needs a file outside its folder | Add a row for that folder (or a contract task) to `RUN/plan.md` with `blockedBy`, tell the builder to finish without it or wait |
-| Builder reports `<task> → PR #n` | Check the rubric quickly (a UI change has `## Screenshots` or `visual: trivial`); add its human steps to the `## Human TODO` section of `RUN/plan.md`; tell the user "PR #n ready for review: <title>", then show the TODO list (below). Then count the open PRs with `gh` (the next row). In on-demand mode, classify it first (Step 4) and say whether pre-review runs |
-| Reviewer verdict `ok` (on-demand mode) | Record in plan.md, shut the reviewer down. Tell the human "PR #N pre-review ok, ready to merge" |
-| Reviewer says `blocked` (on-demand mode) | Keep the reviewer (no `shutdown_request`). Route the fix to the owning builder and give it the reviewer's name; wait for the re-check. Tell the human only if it needs a decision |
-| `lesson: …` from a reviewer, builder or the watcher | Filter and merge it into `## Lessons` in `RUN/plan.md` (see Review lessons) |
-| Watcher: human-comment fix round started / ended | Record in plan.md. Don't route fixes yourself |
-| Watcher: PR merged | Dependent tasks unblock (`CLAIM` checks). If builders are idle and ready tasks exist, tell them to claim again |
-| Watcher: PR closed, not merged | Ask the user: redo (the builder opens a new PR) or drop (remove its row and re-plan its dependents; a claim on a removed row is ignored) |
-| Open PRs ≥ review budget | Tell builders to pause after their current task. Resume when PRs merge |
+| An idle notice with no news (`none: …` that isn't `all tasks claimed`, `waiting for …`, a repeat of something you already handled, an empty final answer) | Nothing. End the turn with no tool call and no text |
+| `<task> → PR #N big: <reason>` (on-demand) | Spawn its reviewer (Step 4). One line to the user only if a reviewer queue builds up |
+| Reviewer `PR #N pre-review: ok` | `shutdown_request` to it. `RUN_PY set <task> reviewer=ok`. Tell the user one line: "PR #N pre-review ok, ready to merge" |
+| Reviewer `PR #N pre-review: blocked …` | Keep the reviewer (no `shutdown_request`); the builder and reviewer fix it directly. Tell the user only if it needs a decision |
+| Builder needs a file outside its folder | Add a row for that folder (or a contract task) to `RUN/plan.md` with `blockedBy`, tell the builder to finish without it or wait. One Edit, one message |
+| Builder or reviewer asks a scope or design question | Answer once, and record it: `RUN_PY decision "<question> → <answer>"`. Builders read `## Decisions` before asking, so the same question never needs a second answer. Ask the user only if you can't decide |
+| `retire` (a builder's or standing reviewer's final answer) | `shutdown_request` to it. When it has exited, spawn a fresh teammate with the **same name** and the same spawn prompt (its claims count from its retire mark). If the runtime refuses the name, use `<name>b` and tell the watcher |
+| `lessons: N lines, over 10: merge them` | Merge `## Lessons` in one Edit (see Review lessons) |
+| Watcher: `PR #N closed: drop <task>` | Remove its row, re-plan its dependents in `plan.md`, tell the user one line |
 | Builder stuck 3+ attempts on the same error | Stop it, re-scope or reassign the task (release its claim: `rm RUN/claims/<plan>/<task>`) |
-| No tasks left (every builder reported `none: all tasks claimed`) and no open PRs | Ask builders, reviewers, then the watcher to shut down. Summarise PRs merged and show the TODO list with every step still open |
+| `none: all tasks claimed` from every builder | Run `RUN_PY status`. No open PRs: ask builders, reviewers, then the watcher to shut down, and post the final summary (status output plus PRs merged). Open PRs left: shut the builders down, keep the watcher and reviewers until they merge |
+
+Scripts and the watcher own the routine work (plan checks, PR records, human steps, PR announcements, the review budget, merges, waking builders, lessons): don't do it yourself.
+
+**The idle hook is best-effort.** The plugin's `TeammateIdle` hook (`scripts/idle_claim.py`) tries to keep a builder working when a task is claimable, so its idle never reaches you. It logs every call to `RUN/.idle-hook.log`. A builder's `none: …` normally means nothing is claimable, so ignore it. Check once per run, the first time one arrives after a merge: if `python3 CLAIM <that builder> --plan RUN/plan.md --peek` prints `claimed <id>` and `RUN/.idle-hook.log` is missing, the hook isn't active in this setup. Tell the user once, and from then on tell idle builders to claim again (one line) when a PR merges.
 
 ## Stay responsive: orchestrate, don't execute
 
-The user chats with you while the team runs. A lead busy with a long job blocks the user and every teammate message. Before acting on any request (from the user or a teammate), estimate how long it takes:
+The user chats with you while the team runs. A lead busy with a long job blocks the user and every teammate message. Before acting on any request, estimate how long it takes:
 
-- **Seconds** (answer from what you know, read one file, run one quick `gh`/`git` command, update `RUN/plan.md`, send a message): do it yourself.
-- **Longer** (research, reading many files, investigation, debugging, writing or editing code or docs, multi-step commands, anything that waits on a build or tests): don't do it. Hand it off and go back to listening:
+- **Seconds** (answer from what you know, read one file, one quick `gh`/`git`/`RUN_PY` command, one Edit to `plan.md`, one message): do it yourself.
+- **Longer** (research, reading many files, investigation, debugging, writing code or docs, multi-step commands, a hard re-plan): hand it off and go back to listening:
   - Fits the plan → add a task row to `RUN/plan.md` so a builder claims it.
   - Fix on an open PR → send it to that PR's builder.
-  - Anything else (a question to investigate, a one-off chore) → spawn a teammate for it (`helper-1..`, a general teammate with a self-contained prompt), and tell the user who took it.
+  - Anything else → spawn a general teammate (`helper-1..`) with a self-contained prompt; give it `model: opus` only for hard reasoning (a re-plan, an architecture call). Tell the user who took it.
 
-Reply to the user within seconds: what you decided and who owns it. Relay the result when the teammate reports. If unsure whether a job is quick, it isn't: delegate.
+Reply to the user within seconds: what you decided and who owns it.
 
-## TODO list
+## Talking to the user: short, and status on demand
 
-Next steps for the user are a TODO list, not only PRs to review. Whenever you report to the user (a new PR, a merge or close, a pause, the final summary, or when asked), show:
-
-1. **Your TODO**: open human steps from `RUN/plan.md` `## Human TODO` plus "review PR #n" for each PR waiting on the user, as checkboxes grouped by when: **Before merge**, **Review**, **After merge**, **To try it**. Each item names the PR it belongs to, where to do it (link to the provider console page, or the shell), and the exact zsh-safe command in a code block. Example:
-   - **Before merge**
-     - [ ] #12 · Create a GitHub OAuth app at https://github.com/settings/developers, callback `http://localhost:3000/auth/callback`; put its id and secret in `.env` as `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`
-   - **Review**
-     - [ ] Review #12 Add login form
-   - **After merge**
-     - [ ] #13 · Run the migration: `pnpm db:migrate`
-2. **The PR table** below.
-
-Tick a step in `RUN/plan.md` when the user says it's done or the watcher sees its PR merged (for review items). Drop steps of a PR that's closed and dropped.
-
-## PR table
-
-Show every PR of the run as one table, built from `RUN/plan.md` and `gh pr list --state all`:
-
-| PR | Title | Task | Owner | Status |
-|---|---|---|---|---|
-| #12 | Add login form | T3 | builder-1 | 🟡 Ready for review |
-| #13 | Session API | T4 | builder-2 | 🔴 Changes requested |
-
-Status is one of: 🔵 Pre-review (reviewer still checking), 🟡 Ready for review, 🔴 Changes requested, ✅ Merged, ⚫ Closed. Sort open PRs first, oldest first. Link each PR number to its URL.
+- One line per event the user needs: a decision, a big PR's pre-review result, a dropped task, the final summary. The watcher's pane already tells them about every new, approved and merged PR.
+- **Never retype the TODO list or the PR table.** It is generated: `python3 RUN_PY status` prints the human TODO (grouped Before merge / Review / After merge / To try it, each item with its PR and exact command) and the PR table (PR, title, task, owner, status). Show it only when the user asks, in the final summary, and once when the review budget first fills. Paste its output as is, or tell the user to type `! python3 RUN_PY status` to see it themselves.
+- When the user says a human step is done: `RUN_PY todo done <id>`. Review items tick themselves when the PR merges.
+- Commands you hand the user must be zsh-safe: no bare `!` (except the `! ` prefix above, which Claude Code handles), no trailing `#` comments.
 
 ## Review lessons
 
-Goal: a mistake caught once in review is not repeated by the next builder. Teammates send you `lesson: [<folder>|all] <rule> — PR #n (<who>)`. You are the only writer of `## Lessons` in `RUN/plan.md`; builders read it before every plan, reviewers check against it.
+Goal: a mistake caught once in review is not repeated by the next builder. Teammates add lessons themselves with `RUN_PY lesson`, which appends to `## Lessons` in `RUN/plan.md` and drops exact repeats. The criteria for a lesson are in `RULES`, which every teammate reads, so you don't filter each one. Builders read `## Lessons` before every task, reviewers check against it.
 
-- **Be picky.** Add a lesson only if it is a rule for future PRs (not a fix for this one), it is checkable on a diff, it came from a human comment or a reviewer blocker, and the repo's `CLAUDE.md`, a linter or a test doesn't already enforce it. Drop everything else, typos and one-off nits included.
-- **Merge every time.** On each add, re-read the section: fold the new lesson into a similar line, rewrite overlapping lines as one more general rule, and remove lines a `CLAUDE.md` now covers. Keep at most 10 lines; over that, merge harder or drop the least useful. Use `[all]` unless the rule is truly about one folder.
-- One imperative line each, ending with its sources: `- [all] A test for a fix must fail when the fix is reverted — PR #8, #18`.
-- When every other task is claimed and `## Lessons` has lines not yet in the repo's `CLAUDE.md` files, add a last task row `lessons-docs`: files = root `CLAUDE.md` (for `[all]`) and `<folder>/CLAUDE.md` (for folder lessons). Acceptance: each lesson merged into the existing rules there (no near-duplicates, the same pickiness bar), one line each. The human reviews it like any PR.
+- **Merge when asked.** When `RUN_PY` reports more than 10 lines, re-read the section in one go: fold similar lines into one more general rule, remove lines a `CLAUDE.md` now covers, drop the least useful. Keep at most 10, one imperative line each, ending with their sources: `- [all] A test for a fix must fail when the fix is reverted — PR #8, #18`. Use `[all]` unless the rule is truly about one folder.
+- When every other task is claimed and `## Lessons` has lines not yet in the repo's `CLAUDE.md` files, add a last task row `lessons-docs`: files = root `CLAUDE.md` (for `[all]`) and `<folder>/CLAUDE.md` (for folder lessons). Acceptance: each lesson merged into the existing rules there (no near-duplicates, the same criteria as `RULES`), one line each. The human reviews it like any PR.
 
-## Step 4 · Review on demand (opt-in, `review: on-demand` only)
+## Step 4 · Review on demand (default; skip in `review: standing`)
 
-Skip this step in the default mode. A builder reports each PR to you right after `gh pr create`, with size hints. Classify it at once (read `gh pr diff <n> --name-only` and `gh pr view <n> --json additions,deletions` if the hints are thin).
-
-**Big** = any of:
+A builder's `RUN_PY pr` classifies its PR from the builder's size hints and tells it to message you only when the PR is **big**:
 - interactive UI (popup, panel, form, buttons, animation, toggle) or a visible page change
 - API contract, schema or migration, or security-sensitive code (auth, secrets, input sanitising, permissions)
 - more than ~300 changed lines, excluding generated files (lockfiles, codegen output, snapshots)
-- the builder says it is not verified in a browser, or that tests were skipped
+- not verified in a browser, or tests skipped
 
-Everything else is **small**.
+Small PRs never reach you; the watcher tells the human "PR #N ready, no pre-review needed".
 
-| Size | Action |
-|---|---|
-| small | Tell the human: "PR #N ready, no pre-review needed (small: <reason>)". |
-| big | Spawn ONE teammate `reviewer-pr<N>` (`bach:pr-reviewer`, Agent tool with `name`) for that PR only. Prompt: `review: on-demand`, PR number, owning builder name, repo root, `PLAN=<absolute RUN/plan.md>`. Tell the human: "PR #N ready, pre-review running (big: <reason>). Wait for label `pre-review:ok` before merging." |
+For a big PR, spawn ONE teammate `reviewer-pr<N>` (`bach:pr-reviewer`, Agent tool with `name`) for that PR only:
+- **Model**: `opus` when the reason includes contract/migration/security; otherwise pass `model: "sonnet"` (UI, size or verification reasons need checks, not deep reasoning).
+- Prompt: `review: on-demand`, PR number, owning builder name, repo root, `PLAN=`, `RUN_PY=`, `RULES=`.
+- `RUN_PY set <task> reviewer=reviewer-pr<N>`. The watcher tells the human to wait for label `pre-review:ok` before merging it.
 
-- Several big PRs → several reviewers in parallel, at most `max_reviewers` alive. Over the cap, queue the PR in plan.md and spawn when a reviewer finishes.
-- A reviewer that sends an `ok` verdict is done: send it a `shutdown_request`. Update `size` and `reviewer` in plan.md.
-- **`blocked`: keep the reviewer.** Don't shut it down and don't spawn a new reviewer for the same PR. Tell the owning builder: "reviewer `reviewer-pr<N>` is waiting on PR #N; fix, push, then send it `fix pushed <sha>`". The builder and reviewer talk directly; the reviewer re-checks only `git diff <old>..<new>` and sends a new verdict.
-  - Owning builder gone (shut down or busy elsewhere): spawn or assign a builder for the fix, keep the same reviewer, and give the new builder the reviewer's name. Tell the reviewer the new builder's name.
+- Several big PRs → several reviewers in parallel, at most `max_reviewers` alive. Over the cap, note the PR in `plan.md` and spawn when a reviewer finishes.
+- A reviewer that reports `ok` is done: send it a `shutdown_request`.
+- **`blocked`: keep the reviewer.** Don't shut it down and don't spawn a new reviewer for the same PR. The reviewer has already messaged the builder directly; the builder sends it `fix pushed <sha>` and it re-checks only the change.
+  - Owning builder gone (retired or shut down): its fresh replacement has the same name and gets the fix. If you had to use another name, tell the reviewer the new builder's name.
   - Shut a reviewer down only on: `ok`, the PR merged or closed, or the builder or human saying no fix is coming.
 - If a big PR merges mid-review, the reviewer stops on its own (it re-checks state); you just record it.
-- Merge gate for big PRs is the label `pre-review:ok`. Say so to the human for every big PR.
 
 ## Rules
 - **Never write feature code.** If you catch yourself editing, stop and make a task instead.
 - **Never block on heavy work.** Anything longer than seconds goes to a teammate (see Stay responsive).
 - Never merge, approve, or push to `main`. The human merges.
 - Two agents never own the same folder at the same time.
-- Keep `RUN/plan.md` current: task → owner → PR → state, and the `## Human TODO` checklist. It is how a resumed lead recovers (`/resume` doesn't restore in-process teammates).
-- Commands you hand the user must be zsh-safe: no bare `!`, no trailing `#` comments.
+- `RUN/plan.md` (plan, Decisions, Lessons) and `RUN/status.json` (via `RUN_PY`) are how a resumed lead recovers (`/resume` doesn't restore in-process teammates). Edit `plan.md` with one Edit per change, or `RUN_PY`; never with ad-hoc scripts.
