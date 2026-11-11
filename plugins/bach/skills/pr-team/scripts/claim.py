@@ -36,7 +36,6 @@ PR gets that task again. On `none`, the builder is marked waiting
 claim clears the mark. Exit 0, or 2 on error.
 """
 import argparse
-import fcntl
 import json
 import os
 import re
@@ -44,9 +43,41 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import datetime
 
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
+
 CLOCK_SKEW_SECONDS = 60  # the builder's clock vs GitHub's createdAt
+
+
+@contextmanager
+def file_lock(path):
+    """Hold an exclusive lock on `path` (created if missing) until the block exits; blocks until free."""
+    with open(path, "w") as f:
+        if os.name == "nt":
+            # msvcrt has no blocking mode: LK_LOCK retries for ~10 s, then raises. Keep retrying.
+            # It locks from the current position, so always lock byte 0.
+            while True:
+                f.seek(0)
+                try:
+                    msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:
+                    continue
+        else:
+            fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def run(*args, cwd=None):
@@ -217,8 +248,7 @@ def main():
         # Only claimed tasks have a PR to look up. Read before the lock: a claim made meanwhile has no PR
         # yet, and a stale snapshot only makes a claim more conservative.
         prs = prs_for([n for n in os.listdir(claims_dir) if not n.startswith(".")])
-        with open(os.path.join(claims_dir, ".lock"), "w") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        with file_lock(os.path.join(claims_dir, ".lock")):
             claims = {}
             for name in sorted(os.listdir(claims_dir)):
                 if name.startswith("."):

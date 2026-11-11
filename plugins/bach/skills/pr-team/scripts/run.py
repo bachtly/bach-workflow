@@ -25,7 +25,6 @@ All commands take --plan <path> (default: <git root>/.claude/pr-team/plan.md).
 Exit 0, 1 when `scope` finds files out of scope, 2 on error.
 """
 import argparse
-import fcntl
 import json
 import os
 import re
@@ -64,8 +63,7 @@ def review_mode(text):
 def state(plan, write=True):
     """Lock RUN/status.json, yield its dict, save it on exit."""
     path = os.path.join(os.path.dirname(plan), "status.json")
-    with open(path + ".lock", "w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with claim.file_lock(path + ".lock"):
         try:
             with open(path) as f:
                 data = json.load(f)
