@@ -3,7 +3,7 @@ export const meta = {
   description: 'feature-design: bach:design-drafter writes or revises the focus stage doc from its template, then design critic + consistency check in parallel',
   whenToUse: 'Launched by the feature-design lead in the background right after the previous stage is approved, and once per revision round',
   phases: [
-    { title: 'Survey', detail: 'research stage only: nested bach:web-research (quick) + Opus low codebase survey, in parallel', model: 'opus' },
+    { title: 'Survey', detail: 'research stage only: nested bach:web-research (standard) + Opus low codebase survey, in parallel', model: 'opus' },
     { title: 'Draft', detail: 'bach:design-drafter (Opus low): write or revise the stage doc', model: 'opus' },
     { title: 'Review', detail: 'bach:design-critic (Opus medium) + Sonnet low consistency check, in parallel', model: 'opus' },
   ],

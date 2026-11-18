@@ -3,7 +3,7 @@ export const meta = {
   description: 'demo-scope Phase A: nested web-research + public feeds + competitor reviews + Product Hunt refs, all in parallel',
   whenToUse: 'Invoked by the demo-scope skill after the idea card and competitor scout',
   phases: [
-    { title: 'Web research', detail: 'nested bach:web-research workflow (quick)' },
+    { title: 'Web research', detail: 'nested bach:web-research workflow (standard)' },
     { title: 'Feeds', detail: 'Haiku low: run feeds.py, then extract quotes per raw file', model: 'haiku' },
     { title: 'Reviews', detail: 'Haiku low per competitor: Trustpilot 1-2 star reviews via WebFetch', model: 'haiku' },
     { title: 'References', detail: 'Haiku low: Product Hunt launches as UI/demo references', model: 'haiku' },

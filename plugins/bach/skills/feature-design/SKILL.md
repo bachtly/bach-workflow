@@ -51,7 +51,7 @@ If `$ARGUMENTS` names an existing slug, run `STATEPY` and continue at its `NEXT`
 4. Gate: **Approve brief?** → `STATEPY approve brief`, then start research at once.
 
 ## Step 2 · Research
-1. Write `RUN/wr-frame.json` (`topic` "<job> for <persona>: how products, open source and standards solve it", `purpose` "feature design options and trade-offs", `recency` "last 24 months", `depth` "quick" (or "standard" for an unfamiliar domain), `types` ["solutions", "comparison", "best_practices"], paraphrases). Run `python3 WR/scripts/init_run.py RUN/wr-frame.json`; keep the args and `wr_run_dir`.
+1. Write `RUN/wr-frame.json` (`topic` "<job> for <persona>: how products, open source and standards solve it", `purpose` "feature design options and trade-offs", `recency` "last 24 months", `depth` "standard" (or "deeper" for an unfamiliar domain), `types` ["solutions", "comparison", "best_practices"], paraphrases). Run `python3 WR/scripts/init_run.py RUN/wr-frame.json`; keep the args and `wr_run_dir`.
 2. Run the stage loop with `stage: "research"`, adding `web_research: {script_path: WR/workflow.js, args}` and `wr_run_dir`. The gate's main question is **which option**; write its ADR.
 
 ## Stage loop (research, requirements, data-model, api, ui, backend, design)

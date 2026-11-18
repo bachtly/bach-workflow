@@ -73,7 +73,7 @@ Launch everything in one message:
    - `topic`: "<JOB> for <PERSONA>: existing tools, complaints, workarounds, standout UX"
    - `purpose`: "2-day demo scoping; competitor landscape + why existing tools fail"
    - `recency`: "last 24 months"
-   - `depth`: "quick"
+   - `depth`: "standard"
    - `types`: ["landscape", "comparison", "root_cause"]
    - `paraphrases`: three variants of "best <job> app for <persona> <year>", "<top competitor> alternatives complaints" and "why <persona> struggle with <job>"
 
