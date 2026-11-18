@@ -37,7 +37,7 @@ Every agent runs `record.py` after writing its JSON. That rebuilds **all CSVs** 
 - **topic**
 - **purpose/audience**: market scan, technical, academic, decision
 - **recency need**: e.g. last 12 months, or none
-- **depth**: quick / standard / deep (default standard)
+- **depth**: standard / deeper / deepest (default standard)
 - **outcome types**, one or more from `references/outcome-types.json`:
 
 | Type | Answers |
@@ -54,7 +54,7 @@ Infer the types from the wording when it is obvious ("how do teams handleâ€¦" â†
 
 ## Budgets (`scripts/init_run.py`)
 
-| | quick | standard | deep |
+| | standard | deeper | deepest |
 |---|---|---|---|
 | paraphrases (round 1 queries) | 3 | 5 | 10 |
 | results screened / query | 8 | 10 | 10 |

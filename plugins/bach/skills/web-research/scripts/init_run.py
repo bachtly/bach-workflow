@@ -4,7 +4,7 @@
 Usage: init_run.py <frame.json> [--out-root <dir>] [--allow-no-pdf]
 Exits non-zero (BLOCKED) when pdftotext is missing, unless --allow-no-pdf.
 frame.json (written by the main loop):
-  {"topic": "...", "purpose": "...", "recency": "...", "depth": "quick|standard|deep",
+  {"topic": "...", "purpose": "...", "recency": "...", "depth": "standard|deeper|deepest",
    "types": ["solutions", ...], "paraphrases": ["...", ...]}
 Prints the args object for Workflow (also saved as <run_dir>/args.json).
 """
@@ -21,9 +21,9 @@ import record  # noqa: E402
 SKILL_DIR = record.SKILL_DIR
 BUDGETS = {
     #            cap  per_query terms_per_round max_queries max_rounds max_results
-    "quick":    dict(cap=30, per_query=3, terms_per_round=3, max_queries=5, max_rounds=3, max_results=8),
-    "standard": dict(cap=100, per_query=5, terms_per_round=5, max_queries=8, max_rounds=6, max_results=10),
-    "deep":     dict(cap=250, per_query=5, terms_per_round=8, max_queries=12, max_rounds=10, max_results=10),
+    "standard": dict(cap=30, per_query=3, terms_per_round=3, max_queries=5, max_rounds=3, max_results=8),
+    "deeper":   dict(cap=100, per_query=5, terms_per_round=5, max_queries=8, max_rounds=6, max_results=10),
+    "deepest":  dict(cap=250, per_query=5, terms_per_round=8, max_queries=12, max_rounds=10, max_results=10),
 }
 
 
@@ -56,6 +56,8 @@ def main():
     if bad or not frame.get("types"):
         sys.exit(f"unknown or missing types {bad}; valid: {list(spec)}")
     depth = frame.get("depth", "standard")
+    if depth not in BUDGETS:
+        sys.exit(f"unknown depth {depth!r}; valid: {list(BUDGETS)}")
     budget = {**BUDGETS[depth], **(frame.get("budget") or {})}
 
     today = datetime.date.today().isoformat()
